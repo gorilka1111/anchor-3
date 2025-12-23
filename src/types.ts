@@ -16,6 +16,7 @@ export interface Anchor {
     range: number; // meters
     radius?: number; // Override radius in meters
     shape?: 'circle' | 'square'; // Override shape
+    groupId?: string; // For grouping anchors
 }
 
 export interface Dimension {

@@ -48,6 +48,8 @@ interface ProjectState {
     updateDimension: (id: string, updates: Partial<Dimension>) => void;
     removeDimension: (id: string) => void;
     toggleLayer: (layer: keyof ProjectLayers) => void;
+    groupAnchors: (ids: string[]) => void;
+    ungroupAnchors: (ids: string[]) => void;
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -67,7 +69,7 @@ export const useProjectStore = create<ProjectState>()(
             selectedIds: [],
             wallPreset: 'thick',
             standardWallThickness: 0.1, // Default 10cm
-            thickWallThickness: 0.2,
+            thickWallThickness: 0.1,
             wideWallThickness: 0.3,
             anchorMode: 'manual',
 
@@ -178,6 +180,39 @@ export const useProjectStore = create<ProjectState>()(
             removeDimension: (id) => set((state) => ({
                 dimensions: state.dimensions.filter((d) => d.id !== id)
             })),
+
+            // Grouping Actions
+            groupAnchors: (ids) => set((state) => {
+                const validAnchors = state.anchors.filter(a => ids.includes(a.id));
+                if (validAnchors.length < 2) return state; // Need at least 2 to group
+
+                const newGroupId = uuidv4();
+                return {
+                    anchors: state.anchors.map(a =>
+                        ids.includes(a.id) ? { ...a, groupId: newGroupId } : a
+                    )
+                };
+            }),
+
+            ungroupAnchors: (ids) => set((state) => {
+                // Find groupIds of selected anchors
+                const targetGroupIds = new Set<string>();
+                state.anchors.forEach(a => {
+                    if (ids.includes(a.id) && a.groupId) {
+                        targetGroupIds.add(a.groupId);
+                    }
+                });
+
+                if (targetGroupIds.size === 0) return state;
+
+                return {
+                    anchors: state.anchors.map(a =>
+                        (a.groupId && targetGroupIds.has(a.groupId))
+                            ? { ...a, groupId: undefined }
+                            : a
+                    )
+                };
+            }),
         }),
         {
             limit: 100,

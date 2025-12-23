@@ -11,7 +11,9 @@ import {
     Upload,
     Info,
     PenTool,
-    Activity
+    Activity,
+    Undo2,
+    Redo2
 } from 'lucide-react';
 
 export const Ribbon: React.FC = () => {
@@ -92,13 +94,28 @@ export const Ribbon: React.FC = () => {
             {/* Edit Group (Moved to Left) */}
             <div className="flex flex-col items-center px-2">
                 <span className="text-[10px] text-gray-500 mb-1 uppercase">Edit</span>
-                <ToolbarButton
-                    icon={MousePointer2}
-                    label="Select"
-                    active={activeTool === 'select'}
-                    onClick={() => setTool('select')}
-                    tooltip="Select (V / Esc)"
-                />
+                <div className="flex space-x-1">
+                    <ToolbarButton
+                        icon={MousePointer2}
+                        label="Select"
+                        active={activeTool === 'select'}
+                        onClick={() => setTool('select')}
+                        tooltip="Select (V / Esc)"
+                    />
+                    <div className="w-px h-6 bg-[#444] mx-1"></div>
+                    <ToolbarButton
+                        icon={Undo2}
+                        label="Undo"
+                        onClick={() => useProjectStore.temporal.getState().undo()}
+                        tooltip="Undo (Ctrl+Z)"
+                    />
+                    <ToolbarButton
+                        icon={Redo2}
+                        label="Redo"
+                        onClick={() => useProjectStore.temporal.getState().redo()}
+                        tooltip="Redo (Ctrl+Shift+Z)"
+                    />
+                </div>
             </div>
 
             <div className="h-10 w-px bg-[#444] mx-2"></div>

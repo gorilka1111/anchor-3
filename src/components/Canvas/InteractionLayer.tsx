@@ -7,7 +7,7 @@ import type { Point } from '../../utils/geometry';
 
 interface InteractionLayerProps {
     stage: Konva.Stage | null;
-    onOpenMenu?: (x: number, y: number, options: { label: string; action: () => void }[]) => void;
+    onOpenMenu?: (x: number, y: number, options: { label?: string; action?: () => void; type?: 'separator' }[]) => void;
     onOpenScaleModal?: (pixelDistance: number) => void;
 }
 
@@ -102,6 +102,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
     // Panning State
     const [isPanning, setIsPanning] = useState(false);
     const lastPanPos = useRef<Point | null>(null);
+    const panStartTime = useRef<number>(0);
     const lastDragPos = useRef<Point | null>(null);
     const isMouseDown = useRef(false);
 
@@ -109,6 +110,8 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
     const dragTextId = useRef<string | null>(null);
     // Anchor Drag State (Ref)
     const dragAnchorId = useRef<string | null>(null);
+    // Dimension Line Drag State (Ref)
+    const dragDimLineId = useRef<string | null>(null);
 
 
 
@@ -149,6 +152,38 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             // Tool Shortcuts
             if (activeTool !== 'scale') { // Don't interrupt scale calib if typing? (though no typing there)
                 const key = e.key.toLowerCase();
+
+                // Undo / Redo
+                if ((e.ctrlKey || e.metaKey) && key === 'z') {
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        useProjectStore.temporal.getState().redo();
+                    } else {
+                        useProjectStore.temporal.getState().undo();
+                    }
+                    return;
+                }
+                if ((e.ctrlKey || e.metaKey) && key === 'y') {
+                    e.preventDefault();
+                    useProjectStore.temporal.getState().redo();
+                    return;
+                }
+
+                // Group / Ungroup Anchors
+                if ((e.ctrlKey || e.metaKey) && key === 'g') {
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        // Ungroup
+                        const selectedIds = useProjectStore.getState().selectedIds;
+                        useProjectStore.getState().ungroupAnchors(selectedIds);
+                    } else {
+                        // Group
+                        const selectedIds = useProjectStore.getState().selectedIds;
+                        useProjectStore.getState().groupAnchors(selectedIds);
+                    }
+                    return;
+                }
+
                 if (key === 'v') setTool('select');
                 if (key === 'w') setTool('wall');
                 if (key === 'r') setTool('wall_rect');
@@ -207,16 +242,32 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                 const isSelected = useProjectStore.getState().selectedIds.includes(anchorId);
 
                 if (!e.evt.shiftKey) {
-                    // Logic: If NOT selected, Select ONLY this one.
+                    // Logic: If NOT selected, Select ONLY this one (and its group).
                     // If ALREADY selected, Keep the group selection (so we can drag the whole group).
                     if (!isSelected) {
-                        setSelection([anchorId]);
+                        const anchor = useProjectStore.getState().anchors.find(a => a.id === anchorId);
+                        if (anchor && anchor.groupId) {
+                            const groupIds = useProjectStore.getState().anchors
+                                .filter(a => a.groupId === anchor.groupId)
+                                .map(a => a.id);
+                            setSelection(groupIds);
+                        } else {
+                            setSelection([anchorId]);
+                        }
                     }
                 } else {
                     // Logic: Toggle selection or Add to selection
                     if (!isSelected) {
+                        const anchor = useProjectStore.getState().anchors.find(a => a.id === anchorId);
                         const current = useProjectStore.getState().selectedIds;
-                        setSelection([...current, anchorId]);
+                        if (anchor && anchor.groupId) {
+                            const groupIds = useProjectStore.getState().anchors
+                                .filter(a => a.groupId === anchor.groupId)
+                                .map(a => a.id);
+                            setSelection([...new Set([...current, ...groupIds])]);
+                        } else {
+                            setSelection([...current, anchorId]);
+                        }
                     }
                 }
 
@@ -228,6 +279,22 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             // Text Drag Check
             // Allow dragging via Handle (always) OR Text (if already selected)
             const name = e.target.name();
+            // Dimension Line Drag Check
+            if (name === 'dimension-line') {
+                const targetId = e.target.id();
+                // If dragging line, we must ensure it is selected? Maybe auto-select?
+                // For now, let's auto-select if needed or just allow drag.
+                // Usually CAD allows drag even if not previously selected, or selects on down.
+                const isSelected = useProjectStore.getState().selectedIds.includes(targetId);
+                if (!isSelected && !e.evt.shiftKey) {
+                    setSelection([targetId]);
+                }
+
+                dragDimLineId.current = targetId;
+                lastDragPos.current = pos;
+                return;
+            }
+
             if (name === 'dim-text-handle' || name === 'dim-text') {
                 const targetId = e.target.id();
                 // Handle ID is just 'id', Text ID is 'dim-text-id'
@@ -256,6 +323,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                 e.evt.preventDefault();
                 setIsPanning(true);
                 lastPanPos.current = { x: stagePos.x, y: stagePos.y };
+                panStartTime.current = Date.now();
                 return;
             }
 
@@ -458,6 +526,34 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                 return;
             }
 
+            // Drag Dimension Line (Perpendicular)
+            if (dragDimLineId.current && lastDragPos.current) {
+                const dim = useProjectStore.getState().dimensions.find(d => d.id === dragDimLineId.current);
+                if (dim) {
+                    const dx = pos.x - lastDragPos.current.x;
+                    const dy = pos.y - lastDragPos.current.y;
+
+                    const [x1, y1, x2, y2] = dim.points;
+                    // Calculate Normal
+                    const dist = Math.hypot(x2 - x1, y2 - y1);
+                    if (dist > 0.001) {
+                        const nx = -(y2 - y1) / dist;
+                        const ny = (x2 - x1) / dist;
+
+                        // Project delta onto normal
+                        const dot = dx * nx + dy * ny;
+                        const moveX = dot * nx;
+                        const moveY = dot * ny;
+
+                        useProjectStore.getState().updateDimension(dim.id, {
+                            points: [x1 + moveX, y1 + moveY, x2 + moveX, y2 + moveY]
+                        });
+                    }
+                }
+                lastDragPos.current = pos;
+                return;
+            }
+
             // Drag Anchor (Delta based)
             if (dragAnchorId.current && lastDragPos.current) {
                 const dx = pos.x - lastDragPos.current.x;
@@ -509,11 +605,14 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             isMouseDown.current = false;
             dragTextId.current = null;
             dragAnchorId.current = null;
+            dragDimLineId.current = null;
             lastDragPos.current = null;
 
             if (e.evt.button === 2) {
                 if (isPanning) {
                     setIsPanning(false);
+                    // Check if it was a CLICK (short distance pan)
+                    checkRMBClick(e);
                     lastPanPos.current = null;
                 }
             }
@@ -676,89 +775,124 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             }
         };
 
+
+        const openAnchorMenu = (pointer: { x: number, y: number }, targetIds: string[]) => {
+            if (onOpenMenu) {
+                const state = useProjectStore.getState();
+                onOpenMenu(pointer.x, pointer.y, [
+                    {
+                        label: 'Set Radius (m)...',
+                        action: () => {
+                            const r = prompt("Enter Radius in meters:", "5");
+                            if (r !== null) {
+                                const val = parseFloat(r);
+                                if (!isNaN(val) && val > 0) {
+                                    targetIds.forEach(id => state.updateAnchor(id, { radius: val }));
+                                }
+                            }
+                        }
+                    },
+                    {
+                        label: 'Shape: Circle',
+                        action: () => targetIds.forEach(id => state.updateAnchor(id, { shape: 'circle' }))
+                    },
+                    {
+                        label: 'Shape: Square',
+                        action: () => targetIds.forEach(id => state.updateAnchor(id, { shape: 'square' }))
+                    },
+                    {
+                        label: 'Reset to System Default',
+                        action: () => targetIds.forEach(id => state.updateAnchor(id, { radius: undefined, shape: undefined }))
+                    },
+                    { type: 'separator' },
+                    {
+                        label: 'Group Anchors (Ctrl+G)',
+                        action: () => state.groupAnchors(targetIds)
+                    },
+                    {
+                        label: 'Ungroup Anchors (Ctrl+Shift+G)',
+                        action: () => state.ungroupAnchors(targetIds)
+                    }
+                ]);
+            }
+        };
+
         const handleContextMenu = (e: Konva.KonvaEventObject<PointerEvent>) => {
             e.evt.preventDefault();
+            // We rely on MouseUp for the actual trigger to distinguish click vs drag
+        };
 
-            // Anchor Context Menu
-            if (e.target.name() === 'anchor') {
-                const anchorId = e.target.id();
+        // Helper to check if we should show menu
+        const checkRMBClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
+            const pointer = stage.getPointerPosition();
+            if (!pointer || !lastPanPos.current) return;
+
+            // Calc distance
+            const dx = pointer.x - lastPanPos.current.x;
+            const dy = pointer.y - lastPanPos.current.y;
+            const dist = Math.hypot(dx, dy);
+
+            const duration = Date.now() - panStartTime.current;
+
+            if (dist < 5 && duration < 500) {
+                // It's a CLICK
                 const state = useProjectStore.getState();
                 const currentSelection = state.selectedIds;
 
-                // If clicked anchor is not selected, select it (exclusive)
-                // If it IS selected, apply to all selected anchors
-                let targetIds = currentSelection;
-                if (!currentSelection.includes(anchorId)) {
-                    state.setSelection([anchorId]);
-                    targetIds = [anchorId];
-                }
-
-                const pointer = stage.getPointerPosition();
-                if (pointer && onOpenMenu) {
-                    onOpenMenu(pointer.x, pointer.y, [
-                        {
-                            label: 'Set Radius (m)...',
-                            action: () => {
-                                // Simple prompt for now
-                                const r = prompt("Enter Radius in meters:", "5");
-                                if (r !== null) {
-                                    const val = parseFloat(r);
-                                    if (!isNaN(val) && val > 0) {
-                                        targetIds.forEach(id => state.updateAnchor(id, { radius: val }));
+                // If we clicked an anchor directly
+                if (e.target.name() === 'anchor') {
+                    const anchorId = e.target.id();
+                    // If clicked anchor is not selected, select it (exclusive)
+                    let targetIds = currentSelection;
+                    if (!currentSelection.includes(anchorId)) {
+                        state.setSelection([anchorId]);
+                        targetIds = [anchorId];
+                    }
+                    openAnchorMenu(pointer, targetIds);
+                } else {
+                    // Clicked background or other
+                    // If we have selected anchors, show menu for them
+                    const selectedAnchors = state.anchors.filter(a => currentSelection.includes(a.id));
+                    if (selectedAnchors.length > 0) {
+                        openAnchorMenu(pointer, currentSelection);
+                    } else {
+                        // Default Logic (Wall Loop, etc or just nothing)
+                        if (activeTool === 'wall' && points.length > 0) {
+                            // Wall Menu
+                            if (onOpenMenu) {
+                                onOpenMenu(pointer.x, pointer.y, [
+                                    {
+                                        label: 'Close Loop',
+                                        action: () => {
+                                            if (chainStart && points.length > 0) {
+                                                const start = points[0];
+                                                const end = chainStart;
+                                                if (start.x !== end.x || start.y !== end.y) {
+                                                    addWall({
+                                                        points: [start.x, start.y, end.x, end.y],
+                                                        material: 'concrete',
+                                                        ...getWallParams(wallPreset, standardWallThickness, thickWallThickness, wideWallThickness)
+                                                    });
+                                                }
+                                            }
+                                            setPoints([]);
+                                            setChainStart(null);
+                                        }
+                                    },
+                                    {
+                                        label: 'Stop Drawing',
+                                        action: () => {
+                                            setPoints([]);
+                                            setChainStart(null);
+                                        }
                                     }
-                                }
+                                ]);
                             }
-                        },
-                        {
-                            label: 'Shape: Circle',
-                            action: () => targetIds.forEach(id => state.updateAnchor(id, { shape: 'circle' }))
-                        },
-                        {
-                            label: 'Shape: Square',
-                            action: () => targetIds.forEach(id => state.updateAnchor(id, { shape: 'square' }))
-                        },
-                        {
-                            label: 'Reset to System Default',
-                            action: () => targetIds.forEach(id => state.updateAnchor(id, { radius: undefined, shape: undefined }))
+                        } else {
+                            setTool('select');
                         }
-                    ]);
+                    }
                 }
-                return;
-            }
-
-            if (!isPanning && activeTool === 'wall' && points.length > 0) {
-                const pointer = stage.getPointerPosition();
-                if (pointer && onOpenMenu) {
-                    onOpenMenu(pointer.x, pointer.y, [
-                        {
-                            label: 'Close Loop',
-                            action: () => {
-                                if (chainStart && points.length > 0) {
-                                    const start = points[0];
-                                    const end = chainStart;
-                                    if (start.x !== end.x || start.y !== end.y) {
-                                        addWall({
-                                            points: [start.x, start.y, end.x, end.y],
-                                            material: 'concrete',
-                                            ...getWallParams(wallPreset, standardWallThickness, thickWallThickness, wideWallThickness)
-                                        });
-                                    }
-                                }
-                                setPoints([]);
-                                setChainStart(null);
-                            }
-                        },
-                        {
-                            label: 'Stop Drawing',
-                            action: () => {
-                                setPoints([]);
-                                setChainStart(null);
-                            }
-                        }
-                    ]);
-                }
-            } else if (!isPanning) {
-                setTool('select');
             }
         };
 

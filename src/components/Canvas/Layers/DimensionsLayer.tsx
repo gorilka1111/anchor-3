@@ -60,12 +60,21 @@ export const DimensionsLayer: React.FC = () => {
                     <Group key={dim.id}>
                         {/* Main Line */}
                         <Line
+                            name="dimension-line"
+                            id={dim.id}
                             points={[x1, y1, x2, y2]}
                             stroke={color}
                             strokeWidth={isSelected ? 2 : 1}
-                            dash={[5, 5]} // Optional: Match scale style for dimensions? User requested dashed lines for scale tool, maybe regular dim is solid?
-                        // User request 33: "Style dimension lines to resemble the 'Scale' tool's appearance (e.g., dashed lines)."
-                        // So let's make it dashed.
+                            hitStrokeWidth={20} // Easy to grab
+                            dash={[5, 5]}
+                            onMouseEnter={(e) => {
+                                const container = e.target.getStage()?.container();
+                                if (container) container.style.cursor = 'move';
+                            }}
+                            onMouseLeave={(e) => {
+                                const container = e.target.getStage()?.container();
+                                if (container) container.style.cursor = 'default';
+                            }}
                         />
                         {/* Ticks */}
                         <Line points={[t1x1, t1y1, t1x2, t1y2]} stroke={color} strokeWidth={1} />
