@@ -24,7 +24,9 @@ export const Ribbon: React.FC = () => {
         setWallPreset,
         setStandardWallThickness,
         anchorMode,
-        setAnchorMode
+        setAnchorMode,
+        layers,
+        toggleLayer
     } = useProjectStore();
 
     const [isConfigOpen, setIsConfigOpen] = React.useState<boolean | string>(false);
@@ -115,6 +117,43 @@ export const Ribbon: React.FC = () => {
                         onClick={() => useProjectStore.temporal.getState().redo()}
                         tooltip="Redo (Ctrl+Shift+Z)"
                     />
+                </div>
+            </div>
+
+            <div className="h-10 w-px bg-[#444] mx-2"></div>
+
+            {/* Layers Group */}
+            <div className="flex flex-col items-center px-2">
+                <span className="text-[10px] text-gray-500 mb-1 uppercase">Layers</span>
+                <div className="grid grid-cols-2 gap-0.5">
+                    <button
+                        onClick={() => toggleLayer('floorplan')}
+                        title="Toggle Imported Drawing"
+                        className={`p-1 rounded hover:bg-[#444] ${layers.floorplan ? 'text-blue-400' : 'text-gray-600'}`}
+                    >
+                        <Upload size={14} />
+                    </button>
+                    <button
+                        onClick={() => toggleLayer('walls')}
+                        title="Toggle Walls"
+                        className={`p-1 rounded hover:bg-[#444] ${layers.walls ? 'text-blue-400' : 'text-gray-600'}`}
+                    >
+                        <Square size={14} />
+                    </button>
+                    <button
+                        onClick={() => toggleLayer('anchors')}
+                        title="Toggle Anchors"
+                        className={`p-1 rounded hover:bg-[#444] ${layers.anchors ? 'text-blue-400' : 'text-gray-600'}`}
+                    >
+                        <Wifi size={14} />
+                    </button>
+                    <button
+                        onClick={() => toggleLayer('dimensions')}
+                        title="Toggle Dimensions"
+                        className={`p-1 rounded hover:bg-[#444] ${layers.dimensions ? 'text-blue-400' : 'text-gray-600'}`}
+                    >
+                        <Ruler size={14} />
+                    </button>
                 </div>
             </div>
 

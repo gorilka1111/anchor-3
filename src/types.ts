@@ -34,4 +34,5 @@ export interface ProjectLayers {
     heatmap: boolean;
     floorplan: boolean;
     dimensions: boolean;
+    anchors: boolean;
 }

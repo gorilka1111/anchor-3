@@ -39,10 +39,12 @@ interface ProjectState {
     alignAnchors: (type: 'horizontal' | 'vertical') => void;
 
     addWall: (wall: Omit<Wall, 'id'>) => void;
+    addWalls: (walls: Omit<Wall, 'id'>[]) => void;
     updateWall: (id: string, updates: Partial<Wall>) => void;
     removeWall: (id: string) => void;
     addAnchor: (anchor: Omit<Anchor, 'id'>) => void;
     updateAnchor: (id: string, updates: Partial<Anchor>) => void;
+    updateAnchors: (updates: { id: string; updates: Partial<Anchor> }[]) => void;
     removeAnchor: (id: string) => void;
     addDimension: (dim: Omit<Dimension, 'id'>) => void;
     updateDimension: (id: string, updates: Partial<Dimension>) => void;
@@ -64,6 +66,7 @@ export const useProjectStore = create<ProjectState>()(
                 heatmap: true,
                 floorplan: true,
                 dimensions: true,
+                anchors: true,
             },
             activeTool: 'select',
             selectedIds: [],
@@ -128,6 +131,10 @@ export const useProjectStore = create<ProjectState>()(
                 walls: [...state.walls, { ...wall, id: uuidv4() }]
             })),
 
+            addWalls: (newWalls) => set((state) => ({
+                walls: [...state.walls, ...newWalls.map(w => ({ ...w, id: uuidv4() }))]
+            })),
+
             updateWall: (id, updates) => set((state) => ({
                 walls: state.walls.map((w) => (w.id === id ? { ...w, ...updates } : w)),
             })),
@@ -160,6 +167,16 @@ export const useProjectStore = create<ProjectState>()(
             updateAnchor: (id, updates) => set((state) => ({
                 anchors: state.anchors.map((a) => (a.id === id ? { ...a, ...updates } : a)),
             })),
+
+            updateAnchors: (updatesBatch) => set((state) => {
+                const updateMap = new Map(updatesBatch.map(u => [u.id, u.updates]));
+                return {
+                    anchors: state.anchors.map(a => {
+                        const updates = updateMap.get(a.id);
+                        return updates ? { ...a, ...updates } : a;
+                    })
+                };
+            }),
 
             removeAnchor: (id) => set((state) => ({
                 anchors: state.anchors.filter((a) => a.id !== id),

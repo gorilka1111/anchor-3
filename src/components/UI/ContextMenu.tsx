@@ -23,12 +23,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, options, onClose
     return (
         <div
             ref={menuRef}
-            className="absolute bg-[#333] border border-[#555] shadow-lg rounded py-1 z-50 min-w-fit w-max"
+            className="absolute bg-[#333] border border-[#555] shadow-lg rounded py-1 z-50 flex flex-col w-max"
             style={{ top: y, left: x }}
         >
             {options.map((opt, i) => {
                 if (opt.type === 'separator') {
-                    return <div key={i} className="h-px bg-[#555] my-1 mx-2" />;
+                    return <div key={i} className="h-px bg-[#555] my-1 mx-0" />;
                 }
                 return (
                     <button
@@ -37,7 +37,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, options, onClose
                             if (opt.action) opt.action();
                             onClose();
                         }}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-[#444] transition-colors"
+                        className="text-left px-[5px] py-1.5 text-sm text-gray-200 hover:bg-[#444] transition-colors whitespace-nowrap block w-full"
                     >
                         {opt.label}
                     </button>

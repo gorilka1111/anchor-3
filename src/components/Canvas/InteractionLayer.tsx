@@ -85,7 +85,7 @@ const isPointNearLine = (p: Point, x1: number, y1: number, x2: number, y2: numbe
 };
 
 export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpenMenu, onOpenScaleModal }) => {
-    const { activeTool, addWall, addAnchor, setTool, walls, anchors, setSelection, wallPreset, standardWallThickness, thickWallThickness, wideWallThickness, selectedIds, setAnchorMode, removeWall, removeAnchor, removeDimension, updateDimension, dimensions, anchorRadius } = useProjectStore();
+    const { activeTool, addWall, addWalls, addAnchor, setTool, walls, anchors, setSelection, wallPreset, standardWallThickness, thickWallThickness, wideWallThickness, selectedIds, setAnchorMode, removeWall, removeAnchor, updateAnchors, removeDimension, updateDimension, dimensions, anchorRadius } = useProjectStore();
     const [points, setPoints] = useState<Point[]>([]);
     const [chainStart, setChainStart] = useState<Point | null>(null);
     const [currentMousePos, setCurrentMousePos] = useState<Point | null>(null);
@@ -105,6 +105,8 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
     const panStartTime = useRef<number>(0);
     const lastDragPos = useRef<Point | null>(null);
     const isMouseDown = useRef(false);
+    const isHistoryPaused = useRef(false);
+
 
     // Text Drag State (Ref)
     const dragTextId = useRef<string | null>(null);
@@ -159,7 +161,26 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     if (e.shiftKey) {
                         useProjectStore.temporal.getState().redo();
                     } else {
-                        useProjectStore.temporal.getState().undo();
+                        // Custom Undo for Wall Tool Chain
+                        if (activeTool === 'wall' && points.length > 0) {
+                            // Capture the wall that is about to be undone (the last one)
+                            const wallsBefore = useProjectStore.getState().walls;
+                            const wallToUndo = wallsBefore.length > 0 ? wallsBefore[wallsBefore.length - 1] : null;
+
+                            useProjectStore.temporal.getState().undo();
+
+                            if (wallToUndo) {
+                                // Set cursor to the START of the undone wall
+                                setPoints([{ x: wallToUndo.points[0], y: wallToUndo.points[1] }]);
+                                setChainStart({ x: wallToUndo.points[0], y: wallToUndo.points[1] });
+                            } else {
+                                // Valid reset if we undid the first wall
+                                setPoints([]);
+                                setChainStart(null);
+                            }
+                        } else {
+                            useProjectStore.temporal.getState().undo();
+                        }
                     }
                     return;
                 }
@@ -211,7 +232,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [setTool, setSelection, setAnchorMode, activeTool]); // Reduced deps for key handler
+    }, [setTool, setSelection, setAnchorMode, activeTool, points]); // Added points to deps
 
     useEffect(() => {
         if (!stage) return;
@@ -273,6 +294,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
                 dragAnchorId.current = anchorId;
                 lastDragPos.current = pos;
+                useProjectStore.temporal.getState().pause(); // Pause Undo History
                 return;
             }
 
@@ -292,6 +314,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
                 dragDimLineId.current = targetId;
                 lastDragPos.current = pos;
+                useProjectStore.temporal.getState().pause();
                 return;
             }
 
@@ -305,6 +328,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                 // If Handle (implies selected) OR (Text AND Selected), start drag
                 if (name === 'dim-text-handle' || (name === 'dim-text' && isSelected)) {
                     dragTextId.current = realId;
+                    useProjectStore.temporal.getState().pause();
                     return; // Consume event (no selection box)
                 }
 
@@ -462,10 +486,12 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                             const params = getWallParams(wallPreset, standardWallThickness, thickWallThickness, wideWallThickness);
                             const material = 'concrete';
 
-                            addWall({ points: [x1, y1, x2, y1], material, ...params });
-                            addWall({ points: [x2, y1, x2, y2], material, ...params });
-                            addWall({ points: [x2, y2, x1, y2], material, ...params });
-                            addWall({ points: [x1, y2, x1, y1], material, ...params });
+                            addWalls([
+                                { points: [x1, y1, x2, y1], material, ...params },
+                                { points: [x2, y1, x2, y2], material, ...params },
+                                { points: [x2, y2, x1, y2], material, ...params },
+                                { points: [x1, y2, x1, y1], material, ...params }
+                            ]);
                         }
                         setRectStart(null);
                         setCurrentMousePos(null);
@@ -563,17 +589,21 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                 const isDragSelected = state.selectedIds.includes(dragAnchorId.current);
 
                 if (isDragSelected) {
-                    // Update all selected anchors
-                    state.anchors.forEach(a => {
-                        if (state.selectedIds.includes(a.id)) {
-                            state.updateAnchor(a.id, { x: a.x + dx, y: a.y + dy });
-                        }
-                    });
+                    // Update all selected anchors in batch
+                    const updates = state.anchors
+                        .filter(a => state.selectedIds.includes(a.id))
+                        .map(a => ({
+                            id: a.id,
+                            updates: { x: a.x + dx, y: a.y + dy }
+                        }));
+
+                    updateAnchors(updates);
                 } else {
                     // Just update dragged anchor if for some reason it's not in selection (though logic ensures it is)
                     const a = state.anchors.find(x => x.id === dragAnchorId.current);
                     if (a) state.updateAnchor(a.id, { x: a.x + dx, y: a.y + dy });
                 }
+
                 lastDragPos.current = pos;
                 return;
             }
@@ -603,6 +633,33 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
         const handleMouseUp = (e: Konva.KonvaEventObject<MouseEvent>) => {
             isMouseDown.current = false;
+
+            // Resume History if we were dragging
+            if (dragTextId.current || dragAnchorId.current || dragDimLineId.current) {
+                useProjectStore.temporal.getState().resume();
+
+                // FORCE COMMIT: Trigger a state update to save the "End" position in history
+                // This is needed because changes made while paused are not "pushed" to the stack automatically on resume.
+
+                if (dragAnchorId.current) {
+                    const state = useProjectStore.getState();
+                    const updates = state.anchors
+                        .filter(a => state.selectedIds.includes(a.id))
+                        .map(a => ({ id: a.id, updates: { x: a.x, y: a.y } }));
+                    updateAnchors(updates);
+                }
+
+                if (dragDimLineId.current) {
+                    const d = useProjectStore.getState().dimensions.find(x => x.id === dragDimLineId.current);
+                    if (d) useProjectStore.getState().updateDimension(d.id, { points: [...d.points] });
+                }
+
+                if (dragTextId.current) {
+                    const d = useProjectStore.getState().dimensions.find(x => x.id === dragTextId.current);
+                    if (d) useProjectStore.getState().updateDimension(d.id, { textOffset: { ...d.textOffset } });
+                }
+            }
+
             dragTextId.current = null;
             dragAnchorId.current = null;
             dragDimLineId.current = null;
@@ -746,14 +803,26 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
         const handleDblClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
             if (e.evt.button === 1) { // MMB
-                if (walls.length === 0) return;
+                if (walls.length === 0 && anchors.length === 0) return;
                 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
                 walls.forEach(w => {
                     minX = Math.min(minX, w.points[0], w.points[2]);
                     maxX = Math.max(maxX, w.points[0], w.points[2]);
                     minY = Math.min(minY, w.points[1], w.points[3]);
                     maxY = Math.max(maxY, w.points[1], w.points[3]);
                 });
+
+                anchors.forEach(a => {
+                    minX = Math.min(minX, a.x);
+                    maxX = Math.max(maxX, a.x);
+                    minY = Math.min(minY, a.y);
+                    maxY = Math.max(maxY, a.y);
+                });
+
+                // If nothing found (e.g. initial infinity), skip
+                if (minX === Infinity) return;
+
                 const padding = 1.2;
                 const w = (maxX - minX) * padding || 10;
                 const h = (maxY - minY) * padding || 10;

@@ -3,9 +3,9 @@ import { Group, Circle, Rect, Text } from 'react-konva';
 import { useProjectStore } from '../../../store/useProjectStore';
 
 export const AnchorsLayer: React.FC = () => {
-    const { anchors, scaleRatio, selectedIds, anchorRadius, anchorShape, showAnchorRadius } = useProjectStore();
+    const { anchors, scaleRatio, selectedIds, anchorRadius, anchorShape, showAnchorRadius, layers } = useProjectStore();
 
-    if (anchors.length === 0) return null;
+    if (!layers.anchors || anchors.length === 0) return null;
 
     return (
         <Group>
@@ -61,7 +61,7 @@ export const AnchorsLayer: React.FC = () => {
                         {/* Label */}
                         <Text
                             y={12}
-                            text={`ID: ${anchor.id.slice(0, 4)}`}
+                            text={`${anchor.id.slice(0, 4)}`}
                             fontSize={10}
                             fill="#0078d4"
                             align="center"
