@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
 import { v4 as uuidv4 } from 'uuid';
-import type { Wall, Anchor, Dimension, ProjectLayers, ToolType } from '../types';
+import type { Wall, Anchor, Dimension, ProjectLayers, ToolType, ImportedObject, ImageObject, DXFObject } from '../types';
 
 interface ProjectState {
     scaleRatio: number; // px per meter
@@ -41,11 +41,29 @@ interface ProjectState {
     addWall: (wall: Omit<Wall, 'id'>) => void;
     addWalls: (walls: Omit<Wall, 'id'>[]) => void;
     updateWall: (id: string, updates: Partial<Wall>) => void;
+    updateWallPoint: (oldX: number, oldY: number, newX: number, newY: number) => void;
     removeWall: (id: string) => void;
     addAnchor: (anchor: Omit<Anchor, 'id'>) => void;
     updateAnchor: (id: string, updates: Partial<Anchor>) => void;
     updateAnchors: (updates: { id: string; updates: Partial<Anchor> }[]) => void;
     removeAnchor: (id: string) => void;
+
+    // Import State (Multi-Object)
+    importedObjects: ImportedObject[];
+    activeImportId: string | null; // For Alt+Drag operations
+
+    addImportedObject: (obj: Omit<ImageObject | DXFObject, 'id' | 'visible' | 'locked' | 'opacity' | 'scale' | 'rotation' | 'x' | 'y'>) => void;
+    updateImportedObject: (id: string, updates: Partial<ImportedObject>) => void;
+    removeImportedObject: (id: string) => void;
+    setActiveImportId: (id: string | null) => void;
+
+    // DXF Layer Helper (Updates layers for ALL DXF objects or specific one?)
+    // For now, let's keep a global toggle that affects ALL DXFs or specific active one. 
+    // To keep it simple based on previous request: "Show/Hide All" -> Update ALL DXFs.
+    // Individual toggles -> We might need a UI update later, but for now let's keep basic support.
+    setDxfLayerVisibility: (layerName: string, visible: boolean) => void;
+    setAllDxfLayersVisibility: (visible: boolean) => void;
+
     addDimension: (dim: Omit<Dimension, 'id'>) => void;
     updateDimension: (id: string, updates: Partial<Dimension>) => void;
     removeDimension: (id: string) => void;
@@ -139,6 +157,29 @@ export const useProjectStore = create<ProjectState>()(
                 walls: state.walls.map((w) => (w.id === id ? { ...w, ...updates } : w)),
             })),
 
+            updateWallPoint: (oldX, oldY, newX, newY) => set((state) => ({
+                walls: state.walls.map(w => {
+                    const tol = 0.001; // 1mm tolerance
+                    let p = [...w.points] as [number, number, number, number];
+                    let changed = false;
+
+                    // Check Start Point
+                    if (Math.abs(p[0] - oldX) < tol && Math.abs(p[1] - oldY) < tol) {
+                        p[0] = newX;
+                        p[1] = newY;
+                        changed = true;
+                    }
+                    // Check End Point
+                    if (Math.abs(p[2] - oldX) < tol && Math.abs(p[3] - oldY) < tol) {
+                        p[2] = newX;
+                        p[3] = newY;
+                        changed = true;
+                    }
+
+                    return changed ? { ...w, points: p } : w;
+                })
+            })),
+
             removeWall: (id) => set((state) => ({
                 walls: state.walls.filter((w) => w.id !== id),
             })),
@@ -184,6 +225,75 @@ export const useProjectStore = create<ProjectState>()(
 
             toggleLayer: (layer) => set((state) => ({
                 layers: { ...state.layers, [layer]: !state.layers[layer] }
+            })),
+
+            importedObjects: [],
+            activeImportId: null,
+
+            addImportedObject: (obj) => set((state) => {
+                const newId = uuidv4();
+
+                // SINGLE DXF POLICY: If adding a DXF, remove all existing DXFs first.
+                let newObjects = state.importedObjects;
+                if (obj.type === 'dxf') {
+                    newObjects = newObjects.filter(o => o.type !== 'dxf');
+                }
+
+                return {
+                    importedObjects: [...newObjects, {
+                        ...obj,
+                        id: newId,
+                        x: 0,
+                        y: 0,
+                        scale: 1,
+                        rotation: 0,
+                        opacity: 0.5,
+                        visible: true,
+                        locked: false,
+                    } as ImportedObject],
+                    // Auto-select the new object so Layer Manager works immediately
+                    activeImportId: newId
+                };
+            }),
+
+            updateImportedObject: (id, updates) => set((state) => ({
+                importedObjects: state.importedObjects.map((obj) =>
+                    obj.id === id ? { ...obj, ...updates } as ImportedObject : obj
+                )
+            })),
+
+            removeImportedObject: (id) => set((state) => ({
+                importedObjects: state.importedObjects.filter((obj) => obj.id !== id),
+                activeImportId: state.activeImportId === id ? null : state.activeImportId
+            })),
+
+            setActiveImportId: (id) => set({ activeImportId: id }),
+
+            // DXF Helpers - Target Active Import ID if it's a DXF, or the single DXF if exists
+            setDxfLayerVisibility: (layerName, visible) => set((state) => ({
+                importedObjects: state.importedObjects.map(obj => {
+                    // Only update if it's the active one (or simply if it's a DXF, since we enforce single DXF now)
+                    if (obj.type === 'dxf') {
+                        // Check if this is the active one OR if we just want to update the single DXF
+                        // Given "Single DXF Policy", updating "all DXFs" is effectively updating "the DXF".
+                        return {
+                            ...obj,
+                            layers: { ...obj.layers, [layerName]: visible }
+                        };
+                    }
+                    return obj;
+                })
+            })),
+
+            setAllDxfLayersVisibility: (visible) => set((state) => ({
+                importedObjects: state.importedObjects.map(obj => {
+                    if (obj.type === 'dxf') {
+                        const newLayers = { ...obj.layers };
+                        Object.keys(newLayers).forEach(k => newLayers[k] = visible);
+                        return { ...obj, layers: newLayers };
+                    }
+                    return obj;
+                })
             })),
 
             addDimension: (dim) => set((state) => ({

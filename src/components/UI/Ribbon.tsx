@@ -1,6 +1,7 @@
 import React from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { ToolbarButton } from './ToolbarButton';
+import { DXFLayerManager } from './DXFLayerManager';
 import {
     MousePointer2,
     Square,
@@ -30,6 +31,7 @@ export const Ribbon: React.FC = () => {
     } = useProjectStore();
 
     const [isConfigOpen, setIsConfigOpen] = React.useState<boolean | string>(false);
+    const [isLayerManagerOpen, setIsLayerManagerOpen] = React.useState(false);
 
     // Normalize check
     const shouldShowConfig = isConfigOpen;
@@ -117,6 +119,86 @@ export const Ribbon: React.FC = () => {
                         onClick={() => useProjectStore.temporal.getState().redo()}
                         tooltip="Redo (Ctrl+Shift+Z)"
                     />
+                </div>
+            </div>
+
+            {isLayerManagerOpen && <DXFLayerManager onClose={() => setIsLayerManagerOpen(false)} />}
+
+            <div className="h-10 w-px bg-[#444] mx-2"></div>
+
+            {/* Import Group */}
+            {/* Import Group */}
+            <div className="flex flex-col items-center px-2">
+                <span className="text-[10px] text-gray-500 mb-1 uppercase">Import</span>
+                <div className="flex space-x-1">
+                    <label className="cursor-pointer flex flex-col items-center justify-center w-8 h-8 rounded hover:bg-[#333] transition-colors" title="Import File (Image, PDF, DXF)">
+                        <span className="text-white font-bold text-xs"><Upload size={18} /></span>
+                        <input type="file" accept=".png, .jpg, .jpeg, .pdf, .dxf" className="hidden" onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+
+                            const ext = file.name.split('.').pop()?.toLowerCase();
+
+                            try {
+                                const state = useProjectStore.getState();
+
+                                if (ext === 'dxf') {
+                                    const { importDXF } = await import('../../utils/importers/importDXF');
+                                    const data = await importDXF(file);
+
+                                    const layers: Record<string, boolean> = {};
+                                    if (data && data.tables && data.tables.layer && data.tables.layer.layers) {
+                                        Object.keys(data.tables.layer.layers).forEach(name => layers[name] = true);
+                                    }
+
+                                    state.addImportedObject({
+                                        type: 'dxf',
+                                        name: file.name,
+                                        data: data,
+                                        layers: layers
+                                    });
+                                    setIsLayerManagerOpen(true);
+
+                                } else if (ext === 'pdf') {
+                                    const { importPDF } = await import('../../utils/importers/importPDF');
+                                    const img = await importPDF(file);
+                                    state.addImportedObject({
+                                        type: 'image',
+                                        name: file.name,
+                                        src: img.src,
+                                        width: img.width,
+                                        height: img.height
+                                    });
+
+                                } else if (['png', 'jpg', 'jpeg'].includes(ext || '')) {
+                                    const { importImage } = await import('../../utils/importers/importImage');
+                                    const img = await importImage(file);
+                                    state.addImportedObject({
+                                        type: 'image',
+                                        name: file.name,
+                                        src: img.src,
+                                        width: img.width,
+                                        height: img.height
+                                    });
+
+                                } else {
+                                    alert('Unsupported file type: ' + ext);
+                                }
+                            } catch (err) {
+                                console.error(err);
+                                alert(`Failed to import ${ext?.toUpperCase()} file.`);
+                            }
+                            e.target.value = '';
+                        }} />
+                    </label>
+
+                    <button
+                        onClick={() => setIsLayerManagerOpen(!isLayerManagerOpen)}
+                        className={`w-8 h-8 rounded hover:bg-[#333] transition-colors flex items-center justify-center ${isLayerManagerOpen ? 'bg-[#333] text-blue-400' : 'text-gray-400'}`}
+                        title="DXF Layers"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                    </button>
                 </div>
             </div>
 
@@ -335,6 +417,6 @@ export const Ribbon: React.FC = () => {
                 />
             </div>
 
-        </div>
+        </div >
     );
 };

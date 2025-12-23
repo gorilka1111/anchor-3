@@ -36,3 +36,31 @@ export interface ProjectLayers {
     dimensions: boolean;
     anchors: boolean;
 }
+
+export interface BaseImportedObject {
+    id: string;
+    x: number;
+    y: number;
+    rotation: number;
+    scale: number;
+    visible: boolean;
+    locked: boolean;
+    name: string;
+}
+
+export interface ImageObject extends BaseImportedObject {
+    type: 'image';
+    src: string;
+    width: number;
+    height: number;
+}
+
+export interface DXFObject extends BaseImportedObject {
+    type: 'dxf';
+    data: any; // DXF Parser output
+    layers: Record<string, boolean>; // Layer visibility
+    width?: number; // Calculated BBox width
+    height?: number; // Calculated BBox height
+}
+
+export type ImportedObject = ImageObject | DXFObject;

@@ -2,6 +2,8 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Stage, Layer, Line } from 'react-konva';
 import Konva from 'konva';
 import { WallsLayer } from './Layers/WallsLayer';
+import { FloorplanImageLayer } from './Layers/FloorplanImageLayer';
+import { DXFLayer } from './Layers/DXFLayer';
 import InteractionLayer from './InteractionLayer';
 import { DimensionsLayer } from './Layers/DimensionsLayer';
 import { AnchorsLayer } from './Layers/AnchorsLayer';
@@ -163,6 +165,8 @@ export const MainStage: React.FC = () => {
                         <Line points={[-20, 0, 20, 0]} stroke="#666" strokeWidth={2} />
                         <Line points={[0, -20, 0, 20]} stroke="#666" strokeWidth={2} />
 
+                        <FloorplanImageLayer />
+                        <DXFLayer />
                         <WallsLayer />
                         <DimensionsLayer />
                         <AnchorsLayer />

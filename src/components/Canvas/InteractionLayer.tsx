@@ -205,6 +205,26 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     return;
                 }
 
+                // Delete / Backspace
+                if (key === 'delete' || key === 'backspace') {
+                    const state = useProjectStore.getState();
+
+                    // Remove Selected Items
+                    if (state.selectedIds.length > 0) {
+                        state.selectedIds.forEach(id => {
+                            state.removeWall(id);
+                            state.removeAnchor(id);
+                            state.removeDimension(id);
+                        });
+                        setSelection([]);
+                    }
+
+                    // Remove Active Import
+                    if (state.activeImportId) {
+                        state.removeImportedObject(state.activeImportId);
+                    }
+                }
+
                 if (key === 'v') setTool('select');
                 if (key === 'w') setTool('wall');
                 if (key === 'r') setTool('wall_rect');
@@ -254,6 +274,44 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             if (!pos) return;
 
             isMouseDown.current = true;
+
+            // ALT + Left Click (Import Selection)
+            if (e.evt.altKey && e.evt.button === 0) {
+                const stagePos = getStagePoint();
+                if (stagePos) {
+                    const state = useProjectStore.getState();
+                    // Simple Hit Test (Reverse order for Z-index)
+                    const hitObj = [...state.importedObjects].reverse().find(obj => {
+                        if (!obj.visible || obj.locked) return false;
+                        if (obj.type === 'image') {
+                            const w = obj.width * obj.scale;
+                            const h = obj.height * obj.scale;
+                            // Simple box check (ignoring rotation for simplicity for now)
+                            return pos.x >= obj.x && pos.x <= obj.x + w &&
+                                pos.y >= obj.y && pos.y <= obj.y + h;
+                        }
+                        // DXF: Assume always hit for now if in list (improving later)
+                        // For now, allow selecting ANY DXF if we click anywhere while holding Alt (if it's the only one?)
+                        // Real hit testing on DXF lines is expensive without a bounding box.
+                        // Let's at least check if we are "close" to origin or just select the first one found if strictly needed.
+                        // Better: Add bounding box metadata on import.
+                        // FALLBACK: If we hit nothing else, and there is a DXF, select it? 
+                        // No, let's rely on Image for now, and for DXF require user to use Layer Manager or implement bounding box later.
+                        // Actually, let's just make a huge hitbox for DXF or use Layer Manager.
+                        return false;
+                    });
+
+                    if (hitObj) {
+                        state.setActiveImportId(hitObj.id);
+                        // Prevent selection box
+                        return;
+                    } else {
+                        // specialized: If we didn't hit an image, but we have DXFs, maybe cycle them? 
+                        // Or just deselect.
+                        state.setActiveImportId(null);
+                    }
+                }
+            }
 
             // Anchor Drag Check
             if (e.target.name() === 'anchor') {
@@ -522,6 +580,24 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             const pos = getStagePoint();
             if (!pos) return;
 
+            // ALT + Left Drag (Move Active Import)
+            if (e.evt.altKey && isMouseDown.current && useProjectStore.getState().activeImportId) {
+                if (lastDragPos.current) {
+                    const dx = pos.x - lastDragPos.current.x;
+                    const dy = pos.y - lastDragPos.current.y;
+
+                    useProjectStore.getState().updateImportedObject(useProjectStore.getState().activeImportId!, {
+                        x: (useProjectStore.getState().importedObjects.find(o => o.id === useProjectStore.getState().activeImportId)?.x || 0) + dx,
+                        y: (useProjectStore.getState().importedObjects.find(o => o.id === useProjectStore.getState().activeImportId)?.y || 0) + dy
+                    });
+
+                    lastDragPos.current = pos;
+                    return;
+                } else {
+                    lastDragPos.current = pos;
+                }
+            }
+
             // Panning
             if (isPanning && lastPanPos.current) {
                 e.evt.preventDefault();
@@ -726,6 +802,55 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
                         if (isEnclosed) {
                             foundIds.push(a.id);
+                        }
+                    });
+
+                    // Check Imported Objects (Image / DXF) - ONLY if Alt + Drag (Box Selection)
+                    // If regular selection box, we can also include them if we want unified selection.
+                    // User request: "alt+squere select". But usually imports are passive unless alt is held? or just selection tool?
+                    // Let's assume selection tool selects everything.
+
+                    const state = useProjectStore.getState();
+                    state.importedObjects.forEach(obj => {
+                        if (!obj.visible || obj.locked) return;
+
+                        // We need width/height. If not present (legacy DXF), we skip or treat as point?
+                        // Images have width/height.
+                        const w = (obj.width || 0) * obj.scale;
+                        const h = (obj.height || 0) * obj.scale;
+
+                        if (w <= 0 || h <= 0) return;
+
+                        const objMinX = obj.x;
+                        const objMaxX = obj.x + w;
+                        const objMinY = obj.y;
+                        const objMaxY = obj.y + h;
+
+                        if (!isCrossing) {
+                            // Enclosed (Window Select)
+                            const isEnclosed = objMinX >= rect.minX && objMaxX <= rect.maxX &&
+                                objMinY >= rect.minY && objMaxY <= rect.maxY;
+                            if (isEnclosed) {
+                                // We don't have multi-select for imports yet effectively in UI (only activeImportId).
+                                // But we can set the LAST found one as active?
+                                // Or if multiple found?
+                                // Store only supports one activeImportId.
+                                // So we pick the first or last one.
+                                // Let's modify logic: if found, set activeImportId.
+                                // But this function returns IDs for main selection (walls/anchors).
+                                // Imports are separate state.
+                                // We should handle imports separately outside this loop or mix them?
+                                // Current requirement: "dxf will be selected"
+                                // Let's add a side effect or return it.
+                                state.setActiveImportId(obj.id);
+                                // NOTE: This sets it immediately during loop. 
+                                // If multiple, last one wins. This works for now.
+                            }
+                        } else {
+                            // Crossing (Crossing Select)
+                            // AABB Intersection
+                            if (objMaxX < rect.minX || objMinX > rect.maxX || objMaxY < rect.minY || objMinY > rect.maxY) return;
+                            state.setActiveImportId(obj.id);
                         }
                     });
 
@@ -1026,6 +1151,100 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     listening={false}
                 />
             )}
+
+            {/* Wall Endpoint Handles */}
+            {(() => {
+                const state = useProjectStore.getState();
+                const selectedWallIds = state.selectedIds.filter(id => state.walls.some(w => w.id === id));
+
+                const handles: JSX.Element[] = [];
+                const handleRadius = 6 / (stage?.scaleX() || 1);
+
+                selectedWallIds.forEach(id => {
+                    const wall = state.walls.find(w => w.id === id);
+                    if (!wall) return;
+
+                    // Start Point
+                    handles.push(
+                        <Circle
+                            key={`${id}-start`}
+                            x={wall.points[0]}
+                            y={wall.points[1]}
+                            radius={handleRadius}
+                            fill="#00aaff"
+                            stroke="white"
+                            strokeWidth={2 / (stage?.scaleX() || 1)}
+                            draggable
+                            onDragStart={(e) => {
+                                e.cancelBubble = true;
+                            }}
+                            onDragMove={(e) => {
+                                e.cancelBubble = true;
+                                const newPos = { x: e.target.x(), y: e.target.y() };
+                                const currentWall = useProjectStore.getState().walls.find(w => w.id === id);
+                                if (currentWall) {
+                                    // This handle is START [0,1]
+                                    state.updateWallPoint(currentWall.points[0], currentWall.points[1], newPos.x, newPos.y);
+                                }
+                            }}
+                        />
+                    );
+
+                    // End Point
+                    handles.push(
+                        <Circle
+                            key={`${id}-end`}
+                            x={wall.points[2]}
+                            y={wall.points[3]}
+                            radius={handleRadius}
+                            fill="#00aaff"
+                            stroke="white"
+                            strokeWidth={2 / (stage?.scaleX() || 1)}
+                            draggable
+                            onDragStart={(e) => e.cancelBubble = true}
+                            onDragMove={(e) => {
+                                e.cancelBubble = true;
+                                const newPos = { x: e.target.x(), y: e.target.y() };
+                                const currentWall = useProjectStore.getState().walls.find(w => w.id === id);
+                                if (currentWall) {
+                                    // This handle is END [2,3]
+                                    state.updateWallPoint(currentWall.points[2], currentWall.points[3], newPos.x, newPos.y);
+                                }
+                            }}
+                        />
+                    );
+                });
+
+                return handles;
+            })()}
+
+            {/* Import Selection Contour */}
+            {(() => {
+                const state = useProjectStore.getState();
+                if (state.activeImportId) {
+                    const obj = state.importedObjects.find(o => o.id === state.activeImportId);
+                    if (obj && obj.visible && !obj.locked) {
+                        if (obj.type === 'image') {
+                            const scale = obj.scale || 1;
+                            const w = (obj.width || 0) * scale;
+                            const h = (obj.height || 0) * scale;
+                            return (
+                                <Rect
+                                    x={obj.x}
+                                    y={obj.y}
+                                    width={w}
+                                    height={h}
+                                    rotation={obj.rotation}
+                                    stroke="#00ff00"
+                                    strokeWidth={2 / (stage?.scaleX() || 1)}
+                                    listening={false}
+                                />
+                            );
+                        }
+                    }
+                }
+                return null;
+            })()}
         </React.Fragment>
     );
 };
