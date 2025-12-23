@@ -14,6 +14,8 @@ export interface Anchor {
     y: number;
     power: number; // dBm
     range: number; // meters
+    radius?: number; // Override radius in meters
+    shape?: 'circle' | 'square'; // Override shape
 }
 
 export interface Dimension {

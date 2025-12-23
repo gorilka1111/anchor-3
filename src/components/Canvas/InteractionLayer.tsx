@@ -102,12 +102,13 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
     // Panning State
     const [isPanning, setIsPanning] = useState(false);
     const lastPanPos = useRef<Point | null>(null);
-    const [isMouseDown, setIsMouseDown] = useState(false);
+    const lastDragPos = useRef<Point | null>(null);
+    const isMouseDown = useRef(false);
 
-    // Text Drag State
-    const [dragTextId, setDragTextId] = useState<string | null>(null);
-    // Anchor Drag State
-    const [dragAnchorId, setDragAnchorId] = useState<string | null>(null);
+    // Text Drag State (Ref)
+    const dragTextId = useRef<string | null>(null);
+    // Anchor Drag State (Ref)
+    const dragAnchorId = useRef<string | null>(null);
 
 
 
@@ -127,8 +128,8 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                 setSelectionStart(null);
                 setSelectionRect(null);
                 setSelection([]);
-                setDragTextId(null);
-                setDragAnchorId(null);
+                dragTextId.current = null;
+                dragAnchorId.current = null;
             }
 
             // Delete / Backspace
@@ -196,22 +197,31 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             const pos = getStagePoint();
             if (!pos) return;
 
-            setIsMouseDown(true);
+            isMouseDown.current = true;
 
             // Anchor Drag Check
             if (e.target.name() === 'anchor') {
                 const anchorId = e.target.id();
                 // Select it if not selected (unless Shift is down, handled in Click)
-                // Actually, for immediate drag, let's just set Drag ID.
-                // We should also "Select" it visually?
-                // Standard behavior: Click selects. Click+Drag selects and moves.
 
                 const isSelected = useProjectStore.getState().selectedIds.includes(anchorId);
-                if (!isSelected && !e.evt.shiftKey) {
-                    setSelection([anchorId]);
+
+                if (!e.evt.shiftKey) {
+                    // Logic: If NOT selected, Select ONLY this one.
+                    // If ALREADY selected, Keep the group selection (so we can drag the whole group).
+                    if (!isSelected) {
+                        setSelection([anchorId]);
+                    }
+                } else {
+                    // Logic: Toggle selection or Add to selection
+                    if (!isSelected) {
+                        const current = useProjectStore.getState().selectedIds;
+                        setSelection([...current, anchorId]);
+                    }
                 }
 
-                setDragAnchorId(anchorId);
+                dragAnchorId.current = anchorId;
+                lastDragPos.current = pos;
                 return;
             }
 
@@ -227,7 +237,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
                 // If Handle (implies selected) OR (Text AND Selected), start drag
                 if (name === 'dim-text-handle' || (name === 'dim-text' && isSelected)) {
-                    setDragTextId(realId);
+                    dragTextId.current = realId;
                     return; // Consume event (no selection box)
                 }
 
@@ -238,6 +248,11 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
             // RMB Pan Start
             if (e.evt.button === 2) {
+                // If hitting anchor, don't pan, let context menu handle it
+                if (e.target.name() === 'anchor') {
+                    return;
+                }
+
                 e.evt.preventDefault();
                 setIsPanning(true);
                 lastPanPos.current = { x: stagePos.x, y: stagePos.y };
@@ -428,8 +443,8 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             }
 
             // Drag Dimension Text
-            if (dragTextId) {
-                const dim = dimensions.find(d => d.id === dragTextId);
+            if (dragTextId.current) {
+                const dim = useProjectStore.getState().dimensions.find(d => d.id === dragTextId.current);
                 if (dim) {
                     const [x1, y1, x2, y2] = dim.points;
                     const midX = (x1 + x2) / 2;
@@ -438,14 +453,32 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     const offsetX = pos.x - midX;
                     const offsetY = pos.y - midY;
 
-                    updateDimension(dragTextId, { textOffset: { x: offsetX, y: offsetY } });
+                    useProjectStore.getState().updateDimension(dragTextId.current, { textOffset: { x: offsetX, y: offsetY } });
                 }
                 return;
             }
 
-            // Drag Anchor
-            if (dragAnchorId) {
-                useProjectStore.getState().updateAnchor(dragAnchorId, { x: pos.x, y: pos.y });
+            // Drag Anchor (Delta based)
+            if (dragAnchorId.current && lastDragPos.current) {
+                const dx = pos.x - lastDragPos.current.x;
+                const dy = pos.y - lastDragPos.current.y;
+                const state = useProjectStore.getState();
+
+                const isDragSelected = state.selectedIds.includes(dragAnchorId.current);
+
+                if (isDragSelected) {
+                    // Update all selected anchors
+                    state.anchors.forEach(a => {
+                        if (state.selectedIds.includes(a.id)) {
+                            state.updateAnchor(a.id, { x: a.x + dx, y: a.y + dy });
+                        }
+                    });
+                } else {
+                    // Just update dragged anchor if for some reason it's not in selection (though logic ensures it is)
+                    const a = state.anchors.find(x => x.id === dragAnchorId.current);
+                    if (a) state.updateAnchor(a.id, { x: a.x + dx, y: a.y + dy });
+                }
+                lastDragPos.current = pos;
                 return;
             }
 
@@ -460,7 +493,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             } else if (activeTool === 'wall_rect') {
                 if (rectStart) setCurrentMousePos(pos);
             } else if (activeTool === 'select') {
-                if (selectionStart && isMouseDown) {
+                if (selectionStart && isMouseDown.current) {
                     setSelectionRect({
                         x: Math.min(selectionStart.x, pos.x),
                         y: Math.min(selectionStart.y, pos.y),
@@ -473,9 +506,10 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
         };
 
         const handleMouseUp = (e: Konva.KonvaEventObject<MouseEvent>) => {
-            setIsMouseDown(false);
-            setDragTextId(null); // Stop dragging text
-            setDragAnchorId(null); // Stop dragging anchor
+            isMouseDown.current = false;
+            dragTextId.current = null;
+            dragAnchorId.current = null;
+            lastDragPos.current = null;
 
             if (e.evt.button === 2) {
                 if (isPanning) {
@@ -644,6 +678,54 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
         const handleContextMenu = (e: Konva.KonvaEventObject<PointerEvent>) => {
             e.evt.preventDefault();
+
+            // Anchor Context Menu
+            if (e.target.name() === 'anchor') {
+                const anchorId = e.target.id();
+                const state = useProjectStore.getState();
+                const currentSelection = state.selectedIds;
+
+                // If clicked anchor is not selected, select it (exclusive)
+                // If it IS selected, apply to all selected anchors
+                let targetIds = currentSelection;
+                if (!currentSelection.includes(anchorId)) {
+                    state.setSelection([anchorId]);
+                    targetIds = [anchorId];
+                }
+
+                const pointer = stage.getPointerPosition();
+                if (pointer && onOpenMenu) {
+                    onOpenMenu(pointer.x, pointer.y, [
+                        {
+                            label: 'Set Radius (m)...',
+                            action: () => {
+                                // Simple prompt for now
+                                const r = prompt("Enter Radius in meters:", "5");
+                                if (r !== null) {
+                                    const val = parseFloat(r);
+                                    if (!isNaN(val) && val > 0) {
+                                        targetIds.forEach(id => state.updateAnchor(id, { radius: val }));
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            label: 'Shape: Circle',
+                            action: () => targetIds.forEach(id => state.updateAnchor(id, { shape: 'circle' }))
+                        },
+                        {
+                            label: 'Shape: Square',
+                            action: () => targetIds.forEach(id => state.updateAnchor(id, { shape: 'square' }))
+                        },
+                        {
+                            label: 'Reset to System Default',
+                            action: () => targetIds.forEach(id => state.updateAnchor(id, { radius: undefined, shape: undefined }))
+                        }
+                    ]);
+                }
+                return;
+            }
+
             if (!isPanning && activeTool === 'wall' && points.length > 0) {
                 const pointer = stage.getPointerPosition();
                 if (pointer && onOpenMenu) {

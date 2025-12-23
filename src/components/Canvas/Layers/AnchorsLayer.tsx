@@ -11,8 +11,10 @@ export const AnchorsLayer: React.FC = () => {
         <Group>
             {anchors.map((anchor) => {
                 const isSelected = selectedIds.includes(anchor.id);
-                // Use global settings for visualization as requested
-                const radiusPx = anchorRadius * scaleRatio;
+                // Use individual settings if available, otherwise fallback to global
+                const effectiveRadius = anchor.radius !== undefined ? anchor.radius : anchorRadius;
+                const effectiveShape = anchor.shape !== undefined ? anchor.shape : anchorShape;
+                const radiusPx = effectiveRadius * scaleRatio;
 
                 return (
                     <Group key={anchor.id} x={anchor.x} y={anchor.y}>
@@ -20,7 +22,7 @@ export const AnchorsLayer: React.FC = () => {
                         {/* Coverage Area */}
                         {showAnchorRadius && (
                             <>
-                                {anchorShape === 'circle' ? (
+                                {effectiveShape === 'circle' ? (
                                     <Circle
                                         radius={radiusPx}
                                         fill="rgba(0, 120, 212, 0.1)" // Blue transparent
