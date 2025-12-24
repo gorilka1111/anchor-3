@@ -429,10 +429,14 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     const clickPos = pos;
                     const tol = 10 / stage.scaleX();
                     let hitWall = null;
-                    for (const w of walls) {
-                        if (isPointNearWall(clickPos, w, tol)) {
-                            hitWall = w;
-                            break;
+                    const state = useProjectStore.getState();
+
+                    if (state.layers.walls) {
+                        for (const w of walls) {
+                            if (isPointNearWall(clickPos, w, tol)) {
+                                hitWall = w;
+                                break;
+                            }
                         }
                     }
 
@@ -501,7 +505,9 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             } else if (activeTool === 'wall') {
                 if (e.evt.button === 0) {
                     let finalPos = pos;
-                    const snap = getSnapPoint(pos, walls, 20 / (stage.scaleX()));
+                    // Check if snapping allowed (hidden layer = no snap)
+                    const state = useProjectStore.getState();
+                    const snap = state.layers.walls ? getSnapPoint(pos, walls, 20 / (stage.scaleX())) : null;
                     if (snap) finalPos = snap;
 
                     if (isShiftDown && points.length > 0) {
@@ -613,7 +619,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             }
 
             // Drag Dimension Text
-            if (dragTextId.current) {
+            if (dragTextId.current && useProjectStore.getState().layers.dimensions) {
                 const dim = useProjectStore.getState().dimensions.find(d => d.id === dragTextId.current);
                 if (dim) {
                     const [x1, y1, x2, y2] = dim.points;
@@ -629,7 +635,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             }
 
             // Drag Dimension Line (Perpendicular)
-            if (dragDimLineId.current && lastDragPos.current) {
+            if (dragDimLineId.current && lastDragPos.current && useProjectStore.getState().layers.dimensions) {
                 const dim = useProjectStore.getState().dimensions.find(d => d.id === dragDimLineId.current);
                 if (dim) {
                     const dx = pos.x - lastDragPos.current.x;
@@ -657,7 +663,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             }
 
             // Drag Anchor (Delta based)
-            if (dragAnchorId.current && lastDragPos.current) {
+            if (dragAnchorId.current && lastDragPos.current && useProjectStore.getState().layers.anchors) {
                 const dx = pos.x - lastDragPos.current.x;
                 const dy = pos.y - lastDragPos.current.y;
                 const state = useProjectStore.getState();
@@ -686,7 +692,8 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
             // Tool Mouse Move checks...
             if (activeTool === 'wall') {
-                const snap = getSnapPoint(pos, walls, 20 / (stage.scaleX()));
+                const state = useProjectStore.getState();
+                const snap = state.layers.walls ? getSnapPoint(pos, walls, 20 / (stage.scaleX())) : null;
                 setCurrentMousePos(snap || pos);
             } else if (activeTool === 'scale' && points.length > 0) {
                 setCurrentMousePos(pos);
@@ -755,62 +762,73 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
                 const getIdsInRect = (rect: { minX: number, maxX: number, minY: number, maxY: number }, isCrossing: boolean): string[] => {
                     const foundIds: string[] = [];
+                    const state = useProjectStore.getState();
 
                     // Check Walls
-                    walls.forEach(w => {
-                        const wx1 = w.points[0]; const wy1 = w.points[1];
-                        const wx2 = w.points[2]; const wy2 = w.points[3];
-                        const wMinX = Math.min(wx1, wx2); const wMaxX = Math.max(wx1, wx2);
-                        const wMinY = Math.min(wy1, wy2); const wMaxY = Math.max(wy1, wy2);
+                    if (state.layers.walls) {
+                        walls.forEach(w => {
+                            const wx1 = w.points[0]; const wy1 = w.points[1];
+                            const wx2 = w.points[2]; const wy2 = w.points[3];
+                            const wMinX = Math.min(wx1, wx2); const wMaxX = Math.max(wx1, wx2);
+                            const wMinY = Math.min(wy1, wy2); const wMaxY = Math.max(wy1, wy2);
 
-                        const isEnclosed = wMinX >= rect.minX && wMaxX <= rect.maxX &&
-                            wMinY >= rect.minY && wMaxY <= rect.maxY;
+                            const isEnclosed = wMinX >= rect.minX && wMaxX <= rect.maxX &&
+                                wMinY >= rect.minY && wMaxY <= rect.maxY;
 
-                        if (!isCrossing) {
-                            if (isEnclosed) foundIds.push(w.id);
-                        } else {
-                            if (wMaxX < rect.minX || wMinX > rect.maxX || wMaxY < rect.minY || wMinY > rect.maxY) return;
-                            foundIds.push(w.id);
-                        }
-                    });
+                            if (!isCrossing) {
+                                if (isEnclosed) foundIds.push(w.id);
+                            } else {
+                                if (wMaxX < rect.minX || wMinX > rect.maxX || wMaxY < rect.minY || wMinY > rect.maxY) return;
+                                foundIds.push(w.id);
+                            }
+                        });
+                    }
 
                     // Check Dimensions
-                    dimensions.forEach(d => {
-                        const dx1 = d.points[0]; const dy1 = d.points[1];
-                        const dx2 = d.points[2]; const dy2 = d.points[3];
-                        const dMinX = Math.min(dx1, dx2); const dMaxX = Math.max(dx1, dx2);
-                        const dMinY = Math.min(dy1, dy2); const dMaxY = Math.max(dy1, dy2);
+                    if (state.layers.dimensions) {
+                        dimensions.forEach(d => {
+                            const dx1 = d.points[0]; const dy1 = d.points[1];
+                            const dx2 = d.points[2]; const dy2 = d.points[3];
+                            const dMinX = Math.min(dx1, dx2); const dMaxX = Math.max(dx1, dx2);
+                            const dMinY = Math.min(dy1, dy2); const dMaxY = Math.max(dy1, dy2);
 
-                        const isEnclosed = dMinX >= rect.minX && dMaxX <= rect.maxX &&
-                            dMinY >= rect.minY && dMaxY <= rect.maxY;
+                            const isEnclosed = dMinX >= rect.minX && dMaxX <= rect.maxX &&
+                                dMinY >= rect.minY && dMaxY <= rect.maxY;
 
-                        if (!isCrossing) {
-                            if (isEnclosed) foundIds.push(d.id);
-                        } else {
-                            if (dMaxX < rect.minX || dMinX > rect.maxX || dMaxY < rect.minY || dMinY > rect.maxY) return;
-                            foundIds.push(d.id);
-                        }
-                    });
+                            if (!isCrossing) {
+                                if (isEnclosed) foundIds.push(d.id);
+                            } else {
+                                if (dMaxX < rect.minX || dMinX > rect.maxX || dMaxY < rect.minY || dMinY > rect.maxY) return;
+                                foundIds.push(d.id);
+                            }
+                        });
+                    }
 
                     // Check Anchors (Point check)
-                    anchors.forEach(a => {
-                        const ax = a.x;
-                        const ay = a.y;
-                        // Treat anchor as small point/box
-                        const isEnclosed = ax >= rect.minX && ax <= rect.maxX &&
-                            ay >= rect.minY && ay <= rect.maxY;
+                    if (state.layers.anchors) {
+                        anchors.forEach(a => {
+                            const ax = a.x;
+                            const ay = a.y;
+                            // Treat anchor as small point/box
+                            const isEnclosed = ax >= rect.minX && ax <= rect.maxX &&
+                                ay >= rect.minY && ay <= rect.maxY;
 
-                        if (isEnclosed) {
-                            foundIds.push(a.id);
-                        }
-                    });
+                            if (isEnclosed) {
+                                foundIds.push(a.id);
+                            }
+                        });
+                    }
 
                     // Check Imported Objects (Image / DXF) - ONLY if Alt + Drag (Box Selection)
                     // If regular selection box, we can also include them if we want unified selection.
                     // User request: "alt+squere select". But usually imports are passive unless alt is held? or just selection tool?
                     // Let's assume selection tool selects everything.
 
-                    const state = useProjectStore.getState();
+                    // Check Imported Objects (Image / DXF) - ONLY if Alt + Drag (Box Selection)
+                    // If regular selection box, we can also include them if we want unified selection.
+                    // User request: "alt+squere select". But usually imports are passive unless alt is held? or just selection tool?
+                    // Let's assume selection tool selects everything.
+
                     state.importedObjects.forEach(obj => {
                         if (!obj.visible || obj.locked) return;
 
@@ -884,7 +902,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                         }
 
                         // Check Dimensions Line if text not hit
-                        if (!foundId) {
+                        if (!foundId && useProjectStore.getState().layers.dimensions) {
                             for (const d of dimensions) {
                                 if (isPointNearLine(clickPos, d.points[0], d.points[1], d.points[2], d.points[3], tol)) {
                                     foundId = d.id;
@@ -894,7 +912,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                         }
 
                         // If no dim, check walls
-                        if (!foundId) {
+                        if (!foundId && useProjectStore.getState().layers.walls) {
                             for (const w of walls) {
                                 if (isPointNearWall(clickPos, w, tol)) {
                                     foundId = w.id;
@@ -1155,6 +1173,9 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             {/* Wall Endpoint Handles */}
             {(() => {
                 const state = useProjectStore.getState();
+                // Check if Wall Layer is visible
+                if (!state.layers.walls) return null;
+
                 const selectedWallIds = state.selectedIds.filter(id => state.walls.some(w => w.id === id));
 
                 const handles: JSX.Element[] = [];
