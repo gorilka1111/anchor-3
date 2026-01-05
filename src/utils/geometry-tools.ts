@@ -219,3 +219,180 @@ export function generateMedialAxis(polygon: Point[], stepPixels: number): Point[
 
     return skeletonEdges;
 }
+
+// --- Simplified Skeleton Logic ---
+
+// Helper: Point to Line Segment Distance
+function perpendicularDistance(point: Point, lineStart: Point, lineEnd: Point): number {
+    let dx = lineEnd.x - lineStart.x;
+    let dy = lineEnd.y - lineStart.y;
+
+    if (dx === 0 && dy === 0) {
+        return Math.hypot(point.x - lineStart.x, point.y - lineStart.y);
+    }
+
+    const t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / (dx * dx + dy * dy);
+
+    if (t < 0) {
+        return Math.hypot(point.x - lineStart.x, point.y - lineStart.y);
+    } else if (t > 1) {
+        return Math.hypot(point.x - lineEnd.x, point.y - lineEnd.y);
+    }
+
+    return Math.abs(dx * (lineStart.y - point.y) - (lineStart.x - point.x) * dy) / Math.sqrt(dx * dx + dy * dy);
+}
+
+// Ramer-Douglas-Peucker Algorithm
+function douglasPeucker(points: Point[], epsilon: number): Point[] {
+    if (points.length < 3) return points;
+
+    let dmax = 0;
+    let index = 0;
+    const end = points.length - 1;
+
+    for (let i = 1; i < end; i++) {
+        const d = perpendicularDistance(points[i], points[0], points[end]);
+        if (d > dmax) {
+            index = i;
+            dmax = d;
+        }
+    }
+
+    if (dmax > epsilon) {
+        const recResults1 = douglasPeucker(points.slice(0, index + 1), epsilon);
+        const recResults2 = douglasPeucker(points.slice(index, end + 1), epsilon);
+
+        return recResults1.slice(0, recResults1.length - 1).concat(recResults2);
+    } else {
+        return [points[0], points[end]];
+    }
+}
+
+export function generateSimplifiedSkeleton(originalLines: Point[][], minLengthMeters: number = 1.0): Point[][] {
+    // 1. Join connected segments into longer polylines if possible
+    // (Existing Medial Axis is a set of disjoint segments from the Voronoi edge map)
+    // To simplify effectively, we should try to stitch them. 
+    // BUT Voronoi medial axis is naturally a graph.
+    // Simple approach: Apply simplification to each segment? No, segments are short.
+    // We need to build a graph, find long paths, and simplify those paths.
+
+    // Graph Construction
+    const adj = new Map<string, Point[]>();
+    const keyToPoint = new Map<string, Point>();
+    const pointKey = (p: Point) => `${Math.round(p.x * 100)},${Math.round(p.y * 100)}`; // 1cm precision
+
+    // Build Adjacency List
+    originalLines.forEach(line => {
+        const p1 = line[0];
+        const p2 = line[1];
+        const k1 = pointKey(p1);
+        const k2 = pointKey(p2);
+
+        if (!adj.has(k1)) { adj.set(k1, []); keyToPoint.set(k1, p1); }
+        if (!adj.has(k2)) { adj.set(k2, []); keyToPoint.set(k2, p2); }
+
+        // Check if neighbor already exists to avoid dupes
+        if (!adj.get(k1)!.some(p => pointKey(p) === k2)) adj.get(k1)!.push(p2);
+        if (!adj.get(k2)!.some(p => pointKey(p) === k1)) adj.get(k2)!.push(p1);
+    });
+
+    const getDegree = (key: string) => adj.get(key)?.length || 0;
+
+    // Identify Junctions and Endpoints
+    const nodes = Array.from(adj.keys());
+    const criticalNodes = new Set<string>(); // Endpoints (1) and Junctions (>2)
+
+    nodes.forEach(key => {
+        const d = getDegree(key);
+        if (d !== 2) criticalNodes.add(key);
+    });
+
+    // If simple loop (all degree 2), pick arbitrary node as critical
+    if (criticalNodes.size === 0 && nodes.length > 0) {
+        criticalNodes.add(nodes[0]);
+    }
+
+    // Extract Chains (Paths between Critical Nodes)
+    const chains: { points: Point[], type: 'spur' | 'internal' | 'isolated', length: number }[] = [];
+    const visitedEdges = new Set<string>(); // "k1|k2"
+
+    criticalNodes.forEach(startKey => {
+        const neighbors = adj.get(startKey) || [];
+        neighbors.forEach(nextPoint => {
+            const nextKey = pointKey(nextPoint);
+            const edgeKey = startKey < nextKey ? `${startKey}|${nextKey}` : `${nextKey}|${startKey}`;
+
+            if (visitedEdges.has(edgeKey)) return;
+
+            // Start tracing a chain
+            const chainPoints: Point[] = [keyToPoint.get(startKey)!, nextPoint];
+            visitedEdges.add(edgeKey);
+
+            let currKey = nextKey;
+            let prevKey = startKey;
+            let length = Math.hypot(nextPoint.x - chainPoints[0].x, nextPoint.y - chainPoints[0].y);
+
+            // Traverse until another critical node
+            while (!criticalNodes.has(currKey)) {
+                const nexts = adj.get(currKey);
+                if (!nexts) break; // Should not happen in connected component
+
+                const nextNode = nexts.find(p => pointKey(p) !== prevKey);
+                if (!nextNode) break; // Dead end/Error
+
+                // Register Edge
+                const nKey = pointKey(nextNode);
+                const eKey = currKey < nKey ? `${currKey}|${nKey}` : `${nKey}|${currKey}`;
+                visitedEdges.add(eKey);
+
+                const ptObj = keyToPoint.get(currKey) || { x: 0, y: 0 }; // fallback safety
+                length += Math.hypot(nextNode.x - ptObj.x, nextNode.y - ptObj.y);
+                chainPoints.push(nextNode);
+
+                prevKey = currKey;
+                currKey = nKey;
+            }
+
+            // Determine Type
+            // Start is Critical. End (currKey) should be Critical.
+            const startDegree = getDegree(startKey);
+            const endDegree = getDegree(currKey);
+
+            let type: 'spur' | 'internal' | 'isolated' = 'internal';
+
+            if (startDegree === 1 && endDegree === 1) type = 'isolated';
+            else if (startDegree === 1 || endDegree === 1) type = 'spur';
+            else type = 'internal';
+
+            chains.push({ points: chainPoints, type, length });
+        });
+    });
+
+    // Pruning Logic
+    const PRUNE_THRESHOLD = minLengthMeters * 3.0; // e.g. 3 meters
+
+    // Filter Chains
+    const filteredChains = chains.filter(chain => {
+        if (chain.type === 'spur') {
+            return chain.length > PRUNE_THRESHOLD;
+        }
+        if (chain.type === 'isolated') {
+            return chain.length > PRUNE_THRESHOLD;
+        }
+        return true;
+    });
+
+    // Simplify and Reassemble
+    const simplifiedPaths: Point[][] = [];
+
+    filteredChains.forEach(chain => {
+        // RDP Simplification
+        const simplified = douglasPeucker(chain.points, minLengthMeters * 0.5); // 0.5m epsilon
+
+        for (let i = 0; i < simplified.length - 1; i++) {
+            simplifiedPaths.push([simplified[i], simplified[i + 1]]);
+        }
+    });
+
+    return simplifiedPaths;
+}

@@ -186,6 +186,9 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                         if (id === PLACEMENT_AREA_ID) {
                             useProjectStore.getState().setPlacementArea(null);
                         } else {
+                            const anchor = useProjectStore.getState().anchors.find(a => a.id === id);
+                            if (anchor && anchor.locked) return;
+
                             removeWall(id);
                             removeAnchor(id);
                             removeDimension(id);
@@ -258,6 +261,9 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     // Remove Selected Items
                     if (state.selectedIds.length > 0) {
                         state.selectedIds.forEach(id => {
+                            const anchor = state.anchors.find(a => a.id === id);
+                            if (anchor && anchor.locked) return;
+
                             state.removeWall(id);
                             state.removeAnchor(id);
                             state.removeDimension(id);
@@ -464,9 +470,14 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     }
                 }
 
-                dragAnchorId.current = anchorId;
-                lastDragPos.current = pos;
-                useProjectStore.temporal.getState().pause(); // Pause Undo History
+                if (!anchorId) return;
+                const anchor = useProjectStore.getState().anchors.find(a => a.id === anchorId);
+
+                if (anchor && !anchor.locked) {
+                    dragAnchorId.current = anchorId;
+                    lastDragPos.current = pos;
+                    useProjectStore.temporal.getState().pause(); // Pause Undo History
+                }
                 return;
             }
             // If drawing tools active (wall, dimension, etc.), do NOT return. 

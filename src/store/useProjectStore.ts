@@ -30,6 +30,7 @@ interface ProjectState {
     showOffsets: boolean;
     offsetStep: number; // Disatnce in meters
     showSkeleton: boolean;
+    skeletonMode: 'none' | 'full' | 'simplified'; // New Mode
     showMedialAxis: boolean;
     medialAxisStep: number;
 
@@ -82,9 +83,9 @@ interface ProjectState {
     setShowOffsets: (v: boolean) => void;
     setOffsetStep: (v: number) => void;
     setShowSkeleton: (v: boolean) => void;
-    setShowMedialAxis: (v: boolean) => void;
-    setMedialAxisStep: (v: number) => void;
-
+    setShowMedialAxis: (show: boolean) => void;
+    setMedialAxisStep: (step: number) => void;
+    setSkeletonMode: (mode: 'none' | 'full' | 'simplified') => void;
     alignAnchors: (type: 'horizontal' | 'vertical') => void;
 
     // Heatmap Actions
@@ -216,7 +217,8 @@ export const useProjectStore = create<ProjectState>()(
             // Geometry Tools
             showOffsets: false,
             offsetStep: 5, // Default 5 (meters?) as requested
-            showSkeleton: false,
+            skeletonMode: 'none', // NEW: 'none' | 'full' | 'simplified'
+            showSkeleton: false, // Deprecated, sync with mode
             showMedialAxis: false,
             medialAxisStep: 5,
 
@@ -272,8 +274,9 @@ export const useProjectStore = create<ProjectState>()(
             setShowOffsets: (v) => set({ showOffsets: v }),
             setOffsetStep: (v) => set({ offsetStep: v }),
             setShowSkeleton: (v) => set({ showSkeleton: v }),
-            setShowMedialAxis: (v) => set({ showMedialAxis: v }),
-            setMedialAxisStep: (v) => set({ medialAxisStep: v }),
+            setShowMedialAxis: (show) => set({ showMedialAxis: show }),
+            setMedialAxisStep: (step) => set({ medialAxisStep: step }),
+            setSkeletonMode: (mode) => set({ skeletonMode: mode }),
 
             setShowHeatmap: (v) => set({ showHeatmap: v }),
             setHeatmapResolution: (res) => set({ heatmapResolution: res }),

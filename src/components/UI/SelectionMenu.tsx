@@ -133,36 +133,127 @@ export const SelectionMenu: React.FC = () => {
                         </h3>
                         <button
                             onClick={() => {
+                                if (selectedAnchors.some(a => a.locked)) return;
                                 selectedAnchors.forEach(a => removeAnchor(a.id));
                                 setSelection(selectedIds.filter(id => !selectedAnchors.some(a => a.id === id)));
                             }}
-                            className="text-red-400 hover:text-red-300 text-xs"
+                            disabled={selectedAnchors.some(a => a.locked)}
+                            className={`text-xs ${selectedAnchors.some(a => a.locked) ? 'text-gray-600 cursor-not-allowed' : 'text-red-400 hover:text-red-300'}`}
                         >
                             Delete
                         </button>
                     </div>
 
-                    {selectedAnchors.length > 1 && (
-                        <div className="flex flex-col space-y-2">
-                            <label className="text-[10px] text-gray-400 uppercase">Alignment</label>
-                            <div className="flex space-x-2">
-                                <button
-                                    onClick={() => alignAnchors('horizontal')}
-                                    className="flex-1 bg-[#444] hover:bg-[#555] text-[10px] py-1 rounded text-center"
-                                    title="Align Vertically to Left-most (Same Y)"
-                                >
-                                    Align Horiz
-                                </button>
-                                <button
-                                    onClick={() => alignAnchors('vertical')}
-                                    className="flex-1 bg-[#444] hover:bg-[#555] text-[10px] py-1 rounded text-center"
-                                    title="Align Horizontally to Top-most (Same X)"
-                                >
-                                    Align Vert
-                                </button>
-                            </div>
+                    <div className="space-y-3">
+                        {/* Manual Override */}
+                        <div className="flex items-center space-x-2">
+                            <input
+                                type="checkbox"
+                                id="manual-mode-check"
+                                checked={selectedAnchors.every(a => !a.isAuto)}
+                                onChange={(e) => {
+                                    const newIsManual = e.target.checked;
+                                    const newIsAuto = !newIsManual;
+
+                                    const updatedAnchors = anchors.map(a => {
+                                        if (selectedIds.includes(a.id)) {
+                                            let newId = a.id;
+                                            // ID Change Logic: If becoming Manual, ensure ID starts with 'AM' if it was auto 'A'
+                                            // Requested: "add M to id so it will look like AM..." -> A123 becomes AM123
+                                            if (newIsManual && a.isAuto && a.id.startsWith('A')) {
+                                                newId = 'AM' + a.id.substring(1);
+                                            }
+
+                                            return { ...a, isAuto: newIsAuto, id: newId };
+                                        }
+                                        return a;
+                                    });
+
+                                    // Need to update selection to match new IDs
+                                    const newSelectedIds = selectedAnchors.map(a => {
+                                        if (newIsManual && a.isAuto && a.id.startsWith('A')) {
+                                            return 'AM' + a.id.substring(1);
+                                        }
+                                        return a.id;
+                                    });
+
+                                    useProjectStore.getState().setAnchors(updatedAnchors);
+                                    useProjectStore.getState().setSelection(newSelectedIds);
+                                }}
+                                className="accent-blue-500 rounded sm"
+                            />
+                            <label htmlFor="manual-mode-check" className="text-[10px] text-gray-300 uppercase select-none cursor-pointer">
+                                Manual Mode
+                            </label>
                         </div>
-                    )}
+
+                        {/* Lock Position */}
+                        <div className="flex items-center space-x-2">
+                            <input
+                                type="checkbox"
+                                id="lock-position-check"
+                                checked={selectedAnchors.every(a => a.locked)}
+                                onChange={(e) => {
+                                    const newLocked = e.target.checked;
+                                    const updatedAnchors = anchors.map(a =>
+                                        selectedIds.includes(a.id)
+                                            ? { ...a, locked: newLocked }
+                                            : a
+                                    );
+                                    useProjectStore.getState().setAnchors(updatedAnchors);
+                                }}
+                                className="accent-red-500 rounded sm"
+                            />
+                            <label htmlFor="lock-position-check" className="text-[10px] text-gray-300 uppercase select-none cursor-pointer">
+                                Lock Position <span className="text-gray-500 normal-case">(Prevent Move/Del)</span>
+                            </label>
+                        </div>
+
+                        {/* Radius Control */}
+                        <div className="flex flex-col space-y-1">
+                            <label className="text-[10px] text-gray-400 uppercase flex justify-between">
+                                Radius (m)
+                                <span className="text-gray-300">{selectedAnchors[0]?.radius ?? useProjectStore.getState().anchorRadius}m</span>
+                            </label>
+                            <input
+                                type="range"
+                                min="3" max="30" step="1"
+                                value={selectedAnchors[0]?.radius ?? useProjectStore.getState().anchorRadius}
+                                onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    const updatedAnchors = anchors.map(a =>
+                                        selectedIds.includes(a.id)
+                                            ? { ...a, radius: val }
+                                            : a
+                                    );
+                                    useProjectStore.getState().setAnchors(updatedAnchors);
+                                }}
+                                className="w-full h-1.5 bg-[#444] rounded-lg appearance-none cursor-pointer accent-blue-500"
+                            />
+                        </div>
+
+                        {selectedAnchors.length > 1 && (
+                            <div className="flex flex-col space-y-2 pt-2 border-t border-[#444]">
+                                <label className="text-[10px] text-gray-400 uppercase">Alignment</label>
+                                <div className="flex space-x-2">
+                                    <button
+                                        onClick={() => alignAnchors('horizontal')}
+                                        className="flex-1 bg-[#444] hover:bg-[#555] text-[10px] py-1 rounded text-center transition-colors"
+                                        title="Align Vertically to Left-most (Same Y)"
+                                    >
+                                        Align Horiz
+                                    </button>
+                                    <button
+                                        onClick={() => alignAnchors('vertical')}
+                                        className="flex-1 bg-[#444] hover:bg-[#555] text-[10px] py-1 rounded text-center transition-colors"
+                                        title="Align Horizontally to Top-most (Same X)"
+                                    >
+                                        Align Vert
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
         </div>

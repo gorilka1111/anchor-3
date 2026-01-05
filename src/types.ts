@@ -32,6 +32,7 @@ export interface Anchor {
     groupId?: string; // For grouping anchors
     txPower?: number; // Transmit Power in dBm (Default 0)
     isAuto?: boolean; // Flag for auto-placed anchors
+    locked?: boolean; // Prevent move/delete
 }
 
 export interface Dimension {

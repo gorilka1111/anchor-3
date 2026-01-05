@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { useProjectStore } from '../../../store/useProjectStore';
 import { generateAutoAnchors } from '../../../utils/auto-placement';
-import { Activity, GitCommit, Sliders, CheckSquare } from 'lucide-react';
+import { Activity, GitCommit, Sliders, CheckSquare, Wand2 } from 'lucide-react';
 
 // --- Helper Components ---
 
@@ -74,78 +74,66 @@ export const AutoPlacementSidebar: React.FC = () => {
         isAutoPlacementOpen, setIsAutoPlacementOpen,
         optimizationSettings, setOptimizationSettings,
         showMedialAxis, setShowMedialAxis,
+        skeletonMode, setSkeletonMode,
         showOffsets, setShowOffsets, offsetStep, setOffsetStep,
         centroids, toggleLayer,
         walls, anchors, scaleRatio,
         anchorRadius,
-        placementAreaEnabled, setPlacementAreaEnabled
+        placementAreaEnabled, setPlacementAreaEnabled,
+        placementArea
     } = useProjectStore();
 
-    const handleOptimize = useCallback((scope: 'small' | 'large' | 'all') => {
-        console.log(`[Auto] Optimizing for scope: ${scope}`);
 
+    const handleOptimize = useCallback((scope: 'small' | 'large' | 'all', mode: 'append' | 'replace' = 'replace') => {
+        // Prepare options
         const options = {
-            radius: optimizationSettings.radius || anchorRadius,
-            scaleRatio: scaleRatio,
-            minOverlap: 1,
-            wallThickness: 20,
+            ...optimizationSettings,
             targetScope: scope,
-            coverageTarget: optimizationSettings.coverageTarget,
-            minSignalStrength: optimizationSettings.minSignalStrength,
-            placementArea: useProjectStore.getState().placementArea?.points,
-            placementAreaEnabled: useProjectStore.getState().placementAreaEnabled
+            wallThickness: useProjectStore.getState().standardWallThickness,
+            scaleRatio,
+            anchorRadius: useProjectStore.getState().anchorRadius,
+            placementArea: (placementAreaEnabled && placementArea) ? placementArea.points : undefined,
+            minOverlap: 1
         };
 
-        // 1. Filter out previous AUTO anchors (Keep Manual ones)
-        // If scope is 'all', we might want to clear ALL auto anchors?
-        // Or if scope is 'small', only clear anchors in small rooms?
-        // For simplicity and robustness: "Apply Optimization" clears ALL previous *auto* anchors
-        // and re-runs the current generation. This ensures the result matches the settings.
-        const preservedAnchors = anchors.filter(a => !a.isAuto);
+        // Determine which anchors to preserve based on mode
+        let preservedAnchors = anchors;
+        if (mode === 'replace') {
+            // Replace mode: Keep MANUAL anchors, discard AUTO anchors
+            preservedAnchors = anchors.filter(a => !a.isAuto);
+        } else {
+            // Append mode: Keep ALL existing anchors (Manual + Auto)
+            preservedAnchors = anchors;
+        }
 
         const newAnchorsOmitId = generateAutoAnchors(walls, options, preservedAnchors);
 
-        // 2. Add preserved Manual anchors + New Auto anchors
-        // Note: generateAutoAnchors returns new points. We need to merge.
-        // But `addAnchors` in store usually *appends*.
-        // We probably need `setAnchors` to replace the list.
-
-        // However, `newAnchorsOmitId` are valid Anchor objects without IDs.
-        // We'll trust the store to assign IDs if we pass them, or we can just reconstruct here if needed.
-        // Let's use `setAnchors` with the merged list to be safe.
-        // Wait, `addAnchors` generates IDs. `setAnchors` expects full objects.
-        // We need to keep preserved anchors (with IDs) and add new ones (which need IDs).
-
-        // Actually, `addAnchors` appends. So we should first SET the preserved ones, then ADD the new ones.
+        // Update Store
+        // logical set: 1. Set preserved. 2. Append new.
         useProjectStore.getState().setAnchors(preservedAnchors);
         useProjectStore.getState().addAnchors(newAnchorsOmitId);
 
-    }, [walls, anchors, scaleRatio, optimizationSettings, anchorRadius]);
+    }, [walls, anchors, scaleRatio, optimizationSettings, anchorRadius, placementArea, placementAreaEnabled]);
 
     const handleClearAndOptimize = useCallback(() => {
-        if (optimizationSettings.targetScope === 'all') {
-            if (confirm("This will clear ALL anchors and regenerate. Continue?")) {
-                useProjectStore.getState().setAnchors([]);
-                setTimeout(() => handleOptimize('all'), 50);
-            }
-        } else {
-            handleOptimize(optimizationSettings.targetScope);
-        }
+        // Apply Optimization: Always replace *auto* anchors with new generation
+        // but PRESERVE manual anchors.
+        handleOptimize(optimizationSettings.targetScope, 'replace');
     }, [handleOptimize, optimizationSettings.targetScope]);
 
     if (!isAutoPlacementOpen) return null;
 
     return (
-        <div className="fixed left-0 top-14 bottom-0 w-80 bg-[#1e1e1e] border-r border-[#333] shadow-xl z-50 flex flex-col font-sans text-gray-200">
+        <div className="fixed left-0 top-16 bottom-0 w-80 bg-[#1e1e1e] border-r border-[#333] shadow-xl z-50 flex flex-col font-sans text-gray-200">
             {/* Header */}
-            <div className="p-4 border-b border-[#333] flex justify-between items-center bg-[#252526]">
-                <h3 className="font-semibold text-lg flex items-center gap-2">
-                    <Activity size={18} className="text-blue-400" />
+            <div className="flex justify-between items-center p-4 border-b border-[#333] bg-[#252526]">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-gray-100 flex items-center gap-2">
+                    <Wand2 size={16} className="text-blue-500" />
                     Anchor Placement
                 </h3>
                 <button
                     onClick={() => setIsAutoPlacementOpen(false)}
-                    className="hover:bg-[#333] p-1 rounded transition-colors"
+                    className="text-gray-400 hover:text-white transition-colors"
                 >
                     &times;
                 </button>
@@ -168,10 +156,18 @@ export const AutoPlacementSidebar: React.FC = () => {
                                 title="Centroids"
                             />
                             <ToggleButton
-                                active={showMedialAxis}
-                                onClick={() => setShowMedialAxis(!showMedialAxis)}
-                                icon={<Activity size={14} />}
-                                title="Skeleton"
+                                active={skeletonMode !== 'none'}
+                                onClick={() => {
+                                    const next = skeletonMode === 'none' ? 'full' : skeletonMode === 'full' ? 'simplified' : 'none';
+                                    setSkeletonMode(next);
+                                }}
+                                icon={
+                                    <Activity
+                                        size={14}
+                                        className={skeletonMode === 'simplified' ? 'text-orange-400' : 'currentColor'}
+                                    />
+                                }
+                                title={`Skeleton: ${skeletonMode.charAt(0).toUpperCase() + skeletonMode.slice(1)}`}
                             />
                             <ToggleButton
                                 active={showOffsets}
@@ -230,17 +226,16 @@ export const AutoPlacementSidebar: React.FC = () => {
 
                 {/* 2. Target Placement Actions */}
                 <div className="space-y-3">
-
                     <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mt-4">Auto Place Actions</h4>
                     <div className="flex gap-2">
                         <ActionButton
-                            onClick={() => handleOptimize('small')}
+                            onClick={() => handleOptimize('small', 'append')}
                             label="Small Rooms"
                             desc="< 110m²"
                             color="bg-emerald-600 hover:bg-emerald-500"
                         />
                         <ActionButton
-                            onClick={() => handleOptimize('large')}
+                            onClick={() => handleOptimize('large', 'append')}
                             label="Large Rooms"
                             desc="≥ 110m²"
                             color="bg-blue-600 hover:bg-blue-500"

@@ -13,7 +13,7 @@ import { DimensionsLayer } from './Layers/DimensionsLayer';
 import { AnchorsLayer } from './Layers/AnchorsLayer';
 import { ContextMenu } from '../UI/ContextMenu';
 import { detectRooms } from '../../utils/room-detection';
-import { generateOffsets, generateSkeletonLines, generateMedialAxis } from '../../utils/geometry-tools';
+import { generateOffsets, generateSkeletonLines, generateMedialAxis, generateSimplifiedSkeleton } from '../../utils/geometry-tools';
 import type { Point } from '../../types';
 import { SelectionMenu } from '../UI/SelectionMenu';
 import { useProjectStore } from '../../store/useProjectStore';
@@ -47,6 +47,7 @@ export const MainStage: React.FC = () => {
         showOffsets,
         offsetStep,
         showSkeleton,
+        skeletonMode,
         showMedialAxis,
         medialAxisStep
     } = useProjectStore();
@@ -55,10 +56,10 @@ export const MainStage: React.FC = () => {
     // Combined memo for all geometry lines to avoid redundant 'detectRooms' calls
     const { geometryLines, medialAxisLines } = useMemo(() => {
         const lines: Point[][] = [];
-        const maLines: Point[][] = [];
+        let maLines: Point[][] = [];
 
         try {
-            if (!showOffsets && !showSkeleton && !showMedialAxis) return { geometryLines: [], medialAxisLines: [] };
+            if (!showOffsets && !showSkeleton && skeletonMode === 'none' && !showMedialAxis) return { geometryLines: [], medialAxisLines: [] };
 
             // Use detectRooms from auto-placement which should return Point[][]
             const roomsList = detectRooms(walls);
@@ -80,11 +81,25 @@ export const MainStage: React.FC = () => {
                     skel.forEach(poly => lines.push(poly));
                 }
 
-                if (showMedialAxis) {
-                    // Use new Voronoi-based Medial Axis
-                    // medialAxisStep is in pixels (default 5)
+                // Handle Skeleton Mode (Replaces showMedialAxis logic effectively)
+                // Use medialAxisStep (pixels) for generation
+                if (skeletonMode !== 'none' || showMedialAxis) {
+                    // Use default step if not set?
+                    // medialAxisStep default is 5.
                     const axis = generateMedialAxis(roomPoly, medialAxisStep);
-                    axis.forEach(poly => maLines.push(poly));
+
+                    if (skeletonMode === 'simplified') {
+                        // Simplify!
+                        // Min length 1 meter = 1 * scaleRatio pixels?
+                        // generateSimplifiedSkeleton takes pixels if points are pixels
+                        // Wait, points are in PIXELS in MainStage usually?
+                        // Yes, Stage uses pixels. scaleRatio converts meters to pixels.
+                        // So 1 meter = scaleRatio.
+                        const simplified = generateSimplifiedSkeleton(axis, 1.0 * scaleRatio);
+                        simplified.forEach(poly => maLines.push(poly));
+                    } else {
+                        axis.forEach(poly => maLines.push(poly));
+                    }
                 }
             });
             return { geometryLines: lines, medialAxisLines: maLines };
@@ -92,7 +107,7 @@ export const MainStage: React.FC = () => {
             console.error("Geometry Generation Error:", error);
             return { geometryLines: [], medialAxisLines: [] };
         }
-    }, [walls, showOffsets, showSkeleton, showMedialAxis, offsetStep, medialAxisStep, scaleRatio]);
+    }, [walls, showOffsets, showSkeleton, skeletonMode, showMedialAxis, offsetStep, medialAxisStep, scaleRatio]);
 
     const handleWheel = (e: any) => {
         e.evt.preventDefault();
@@ -243,17 +258,17 @@ export const MainStage: React.FC = () => {
                                 listening={false}
                             />
                         ))}
-                        {/* Medial Axis (Magenta) */}
+                        {/* Medial Axis (Magenta or Custom) */}
                         {medialAxisLines.length > 0 && medialAxisLines.map((poly, i) => (
                             <Line
                                 key={`ma-${i}`}
                                 points={poly.flatMap(p => [p.x, p.y])}
-                                stroke="#ff00ff"
-                                strokeWidth={2}
-                                closed={true}
+                                stroke={skeletonMode === 'simplified' ? '#f97316' : '#ff00ff'} // Orange for Simplified, Magenta for Full
+                                strokeWidth={skeletonMode === 'simplified' ? 3 : 2} // Thicker for simplified
+                                closed={false} // Skeleton lines are open paths usually
                                 opacity={0.8}
                                 listening={false}
-                                dash={[10, 5]} // Dashed for distinction
+                                dash={skeletonMode === 'simplified' ? [] : [10, 5]} // Solid for simplified
                             />
                         ))}
                         <ValidationLayer stage={stage} />
