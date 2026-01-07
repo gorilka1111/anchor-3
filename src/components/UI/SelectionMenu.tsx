@@ -2,7 +2,33 @@ import React from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 
 export const SelectionMenu: React.FC = () => {
-    const { selectedIds, walls, anchors, updateWall, removeWall, removeAnchor, removeDimension, setSelection, alignAnchors } = useProjectStore();
+    const { selectedIds, walls, anchors, updateWall, removeWall, removeAnchor, removeDimension, setSelection, alignAnchors, theme } = useProjectStore();
+
+    const isDark = theme === 'dark';
+
+    // Theme Styles
+    const containerStyle = {
+        position: 'absolute' as const,
+        top: 80,
+        right: 20,
+        zIndex: 50,
+        backgroundColor: isDark ? '#333' : 'white',
+        border: isDark ? '1px solid #555' : '1px solid #e5e7eb',
+        borderRadius: '8px',
+        padding: '12px',
+        color: isDark ? 'white' : '#1f2937', // gray-800
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+        width: '200px'
+    };
+
+    const inputClass = isDark
+        ? "bg-[#222] border border-[#444] text-white"
+        : "bg-gray-50 border-gray-300 text-gray-900";
+
+    const dividerClass = isDark ? "border-[#555]" : "border-gray-200";
+    const headerTextClass = isDark ? "text-gray-400" : "text-gray-500";
+    const subTextClass = isDark ? "text-gray-400" : "text-gray-500";
+    const buttonBgClass = isDark ? "bg-[#444] hover:bg-[#555]" : "bg-gray-100 hover:bg-gray-200 text-gray-700";
 
     if (selectedIds.length === 0) return null;
 
@@ -10,41 +36,22 @@ export const SelectionMenu: React.FC = () => {
     const selectedWalls = walls.filter(w => selectedIds.includes(w.id));
     const selectedAnchors = anchors.filter(a => selectedIds.includes(a.id));
 
-    // Show menu if EITHER walls OR anchors are selected (prioritize logic if mixed?)
-    // If mixed, show generic delete? Or stack sections?
-    // Let's stack sections if needed, or just prioritize one. For now, let's just handle them.
-
     const hasSelection = selectedWalls.length > 0 || selectedAnchors.length > 0;
     if (!hasSelection) return null;
 
-    // TODO: A better UI would handle mixed selection. For now assuming disjoint or handled simply.
-
     return (
-        <div style={{
-            position: 'absolute',
-            top: 80, // Below ribbon
-            right: 20,
-            zIndex: 50,
-            backgroundColor: '#333',
-            border: '1px solid #555',
-            borderRadius: '8px',
-            padding: '12px',
-            color: 'white',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-            width: '200px'
-        }}>
+        <div style={containerStyle}>
 
             {/* --- WALLS SECTION --- */}
             {selectedWalls.length > 0 && (
                 <div className="mb-4 last:mb-0">
-                    <div className="flex justify-between items-center mb-2 pb-2 border-b border-[#555]">
-                        <h3 className="text-xs font-bold uppercase text-gray-400">
+                    <div className={`flex justify-between items-center mb-2 pb-2 border-b ${dividerClass}`}>
+                        <h3 className={`text-xs font-bold uppercase ${headerTextClass}`}>
                             {selectedWalls.length} Wall{selectedWalls.length > 1 ? 's' : ''} Selected
                         </h3>
                         <button
                             onClick={() => {
                                 selectedWalls.forEach(w => removeWall(w.id));
-                                // Cleanup selection if only walls were selected, strictly we should update selection
                                 setSelection(selectedIds.filter(id => !selectedWalls.some(w => w.id === id)));
                             }}
                             className="text-red-400 hover:text-red-300 text-xs"
@@ -55,7 +62,7 @@ export const SelectionMenu: React.FC = () => {
 
                     <div className="space-y-3">
                         <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] text-gray-400 uppercase">Thickness (m)</label>
+                            <label className={`text-[10px] ${subTextClass} uppercase`}>Thickness (m)</label>
                             <input
                                 type="number"
                                 step="0.05"
@@ -69,45 +76,45 @@ export const SelectionMenu: React.FC = () => {
                                         });
                                     }
                                 }}
-                                className="bg-[#222] border border-[#444] rounded px-2 py-1 text-xs w-full focus:outline-none focus:border-blue-500 transition-colors"
+                                className={`${inputClass} rounded px-2 py-1 text-xs w-full focus:outline-none focus:border-blue-500 transition-colors`}
                             />
                         </div>
                         <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] text-gray-400 uppercase">Presets</label>
+                            <label className={`text-[10px] ${subTextClass} uppercase`}>Presets</label>
                             <div className="flex space-x-1">
                                 <button
                                     onClick={() => {
                                         const t = useProjectStore.getState().standardWallThickness;
                                         selectedWalls.forEach(w => updateWall(w.id, { thickness: t, material: 'drywall', attenuation: undefined }));
                                     }}
-                                    className="flex-1 bg-[#444] hover:bg-[#555] text-[10px] py-1 rounded text-center transition-colors"
+                                    className={`flex-1 ${buttonBgClass} text-[10px] py-1 rounded text-center transition-colors`}
                                 >Std</button>
                                 <button
                                     onClick={() => {
                                         const t = useProjectStore.getState().thickWallThickness;
                                         selectedWalls.forEach(w => updateWall(w.id, { thickness: t, material: 'drywall', attenuation: undefined }));
                                     }}
-                                    className="flex-1 bg-[#444] hover:bg-[#555] text-[10px] py-1 rounded text-center transition-colors"
+                                    className={`flex-1 ${buttonBgClass} text-[10px] py-1 rounded text-center transition-colors`}
                                 >Thick</button>
                                 <button
                                     onClick={() => {
                                         const t = useProjectStore.getState().wideWallThickness;
                                         selectedWalls.forEach(w => updateWall(w.id, { thickness: t, material: 'concrete', attenuation: undefined }));
                                     }}
-                                    className="flex-1 bg-[#444] hover:bg-[#555] text-[10px] py-1 rounded text-center transition-colors"
+                                    className={`flex-1 ${buttonBgClass} text-[10px] py-1 rounded text-center transition-colors`}
                                 >Wide</button>
                             </div>
                         </div>
 
                         <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] text-gray-400 uppercase">Material</label>
+                            <label className={`text-[10px] ${subTextClass} uppercase`}>Material</label>
                             <select
                                 value={selectedWalls.length > 1 ? '' : (selectedWalls[0].material || 'concrete')}
                                 onChange={(e) => {
                                     const mat = e.target.value as any;
                                     selectedWalls.forEach(w => updateWall(w.id, { material: mat, attenuation: undefined }));
                                 }}
-                                className="bg-[#222] border border-[#444] rounded px-2 py-1 text-xs w-full focus:outline-none focus:border-blue-500 transition-colors text-white"
+                                className={`${inputClass} rounded px-2 py-1 text-xs w-full focus:outline-none focus:border-blue-500 transition-colors`}
                             >
                                 <option value="drywall">Drywall</option>
                                 <option value="concrete">Concrete</option>
@@ -125,10 +132,10 @@ export const SelectionMenu: React.FC = () => {
             {selectedAnchors.length > 0 && (
                 <div className="mb-0">
                     {/* Add divider if walls were also present */}
-                    {selectedWalls.length > 0 && <div className="border-t border-[#555] my-3"></div>}
+                    {selectedWalls.length > 0 && <div className={`border-t ${dividerClass} my-3`}></div>}
 
-                    <div className="flex justify-between items-center mb-2 pb-2 border-b border-[#555]">
-                        <h3 className="text-xs font-bold uppercase text-gray-400">
+                    <div className={`flex justify-between items-center mb-2 pb-2 border-b ${dividerClass}`}>
+                        <h3 className={`text-xs font-bold uppercase ${headerTextClass}`}>
                             {selectedAnchors.length} Anchor{selectedAnchors.length > 1 ? 's' : ''} Selected
                         </h3>
                         <button
@@ -158,18 +165,14 @@ export const SelectionMenu: React.FC = () => {
                                     const updatedAnchors = anchors.map(a => {
                                         if (selectedIds.includes(a.id)) {
                                             let newId = a.id;
-                                            // ID Change Logic: If becoming Manual, ensure ID starts with 'AM' if it was auto 'A'
-                                            // Requested: "add M to id so it will look like AM..." -> A123 becomes AM123
                                             if (newIsManual && a.isAuto && a.id.startsWith('A')) {
                                                 newId = 'AM' + a.id.substring(1);
                                             }
-
                                             return { ...a, isAuto: newIsAuto, id: newId };
                                         }
                                         return a;
                                     });
 
-                                    // Need to update selection to match new IDs
                                     const newSelectedIds = selectedAnchors.map(a => {
                                         if (newIsManual && a.isAuto && a.id.startsWith('A')) {
                                             return 'AM' + a.id.substring(1);
@@ -182,7 +185,7 @@ export const SelectionMenu: React.FC = () => {
                                 }}
                                 className="accent-blue-500 rounded sm"
                             />
-                            <label htmlFor="manual-mode-check" className="text-[10px] text-gray-300 uppercase select-none cursor-pointer">
+                            <label htmlFor="manual-mode-check" className={`text-[10px] ${subTextClass} uppercase select-none cursor-pointer`}>
                                 Manual Mode
                             </label>
                         </div>
@@ -204,16 +207,16 @@ export const SelectionMenu: React.FC = () => {
                                 }}
                                 className="accent-red-500 rounded sm"
                             />
-                            <label htmlFor="lock-position-check" className="text-[10px] text-gray-300 uppercase select-none cursor-pointer">
+                            <label htmlFor="lock-position-check" className={`text-[10px] ${subTextClass} uppercase select-none cursor-pointer`}>
                                 Lock Position <span className="text-gray-500 normal-case">(Prevent Move/Del)</span>
                             </label>
                         </div>
 
                         {/* Radius Control */}
                         <div className="flex flex-col space-y-1">
-                            <label className="text-[10px] text-gray-400 uppercase flex justify-between">
+                            <label className={`text-[10px] ${subTextClass} uppercase flex justify-between`}>
                                 Radius (m)
-                                <span className="text-gray-300">{selectedAnchors[0]?.radius ?? useProjectStore.getState().anchorRadius}m</span>
+                                <span className={isDark ? "text-gray-300" : "text-gray-600"}>{selectedAnchors[0]?.radius ?? useProjectStore.getState().anchorRadius}m</span>
                             </label>
                             <input
                                 type="range"
@@ -228,24 +231,24 @@ export const SelectionMenu: React.FC = () => {
                                     );
                                     useProjectStore.getState().setAnchors(updatedAnchors);
                                 }}
-                                className="w-full h-1.5 bg-[#444] rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                className={`w-full h-1.5 ${isDark ? "bg-[#444]" : "bg-gray-200"} rounded-lg appearance-none cursor-pointer accent-blue-500`}
                             />
                         </div>
 
                         {selectedAnchors.length > 1 && (
-                            <div className="flex flex-col space-y-2 pt-2 border-t border-[#444]">
-                                <label className="text-[10px] text-gray-400 uppercase">Alignment</label>
+                            <div className={`flex flex-col space-y-2 pt-2 border-t ${dividerClass}`}>
+                                <label className={`text-[10px] ${subTextClass} uppercase`}>Alignment</label>
                                 <div className="flex space-x-2">
                                     <button
                                         onClick={() => alignAnchors('horizontal')}
-                                        className="flex-1 bg-[#444] hover:bg-[#555] text-[10px] py-1 rounded text-center transition-colors"
+                                        className={`flex-1 ${buttonBgClass} text-[10px] py-1 rounded text-center transition-colors`}
                                         title="Align Vertically to Left-most (Same Y)"
                                     >
                                         Align Horiz
                                     </button>
                                     <button
                                         onClick={() => alignAnchors('vertical')}
-                                        className="flex-1 bg-[#444] hover:bg-[#555] text-[10px] py-1 rounded text-center transition-colors"
+                                        className={`flex-1 ${buttonBgClass} text-[10px] py-1 rounded text-center transition-colors`}
                                         title="Align Horizontally to Top-most (Same X)"
                                     >
                                         Align Vert

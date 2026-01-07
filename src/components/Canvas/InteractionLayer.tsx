@@ -145,13 +145,14 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
     // const isHistoryPaused = useRef(false); // Removed unused
 
 
-    // Text Drag State (Ref)
     const dragTextId = useRef<string | null>(null);
     // Anchor Drag State (Ref)
     const dragAnchorId = useRef<string | null>(null);
     // Dimension Line Drag State (Ref)
     const dragDimLineId = useRef<string | null>(null);
 
+    // Moved early return after all hooks to satisfy Rules of Hooks!
+    // Moved early return to end of function to satisfy Rules of Hooks
 
 
     useEffect(() => {
@@ -1722,6 +1723,8 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             stage.off('contextmenu', handleContextMenu);
         };
     }, [stage, handleMouseDown, handleMouseMove, handleMouseUp, handleDblClick, handleContextMenu]);
+
+    if (!stage) return null;
 
     return (
         <React.Fragment>

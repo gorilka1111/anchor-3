@@ -3,7 +3,7 @@ import { Group, Circle, Rect, Text } from 'react-konva';
 import { useProjectStore } from '../../../store/useProjectStore';
 
 export const AnchorsLayer: React.FC = () => {
-    const { anchors, scaleRatio, selectedIds, anchorRadius, anchorShape, showAnchorRadius, layers, theme } = useProjectStore();
+    const { anchors, scaleRatio, selectedIds, anchorRadius, anchorShape, showAnchorRadius, layers, theme, showOverlapCounts } = useProjectStore();
 
     // console.log('Rendering AnchorsLayer. Count:', anchors.length, 'Visible:', layers.anchors);
     if (!layers.anchors || anchors.length === 0) return null;
@@ -69,6 +69,35 @@ export const AnchorsLayer: React.FC = () => {
                             offsetX={15}
                             listening={false}
                         />
+
+                        {/* Overlap Count Debug */}
+                        {showOverlapCounts && (
+                            (() => {
+                                let count = 0;
+                                const r1 = radiusPx;
+                                anchors.forEach(other => {
+                                    if (other.id === anchor.id) return;
+                                    const r2 = (other.radius !== undefined ? other.radius : anchorRadius) * scaleRatio;
+                                    const d = Math.sqrt((anchor.x - other.x) ** 2 + (anchor.y - other.y) ** 2);
+                                    if (d <= (r1 + r2) * 1.01) count++;
+                                });
+
+                                return (
+                                    <Text
+                                        y={-15}
+                                        text={count.toString()}
+                                        fontSize={14}
+                                        fontStyle="bold"
+                                        fill="red"
+                                        stroke="white"
+                                        strokeWidth={0.5}
+                                        align="center"
+                                        offsetX={5}
+                                        listening={false}
+                                    />
+                                );
+                            })()
+                        )}
                     </Group>
                 );
             })}

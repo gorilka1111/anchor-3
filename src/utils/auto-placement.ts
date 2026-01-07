@@ -1,6 +1,13 @@
+
 import type { Wall, Anchor } from '../types';
 import { detectRooms, calculatePolygonArea } from './room-detection';
-import { dist, getPolygonCentroid, getPolygonBBox, isPointInPolygon } from './geometry';
+import {
+    dist,
+    getPolygonCentroid,
+    getPolygonBBox,
+    getBBoxCenter,
+    isPointInPolygon
+} from './geometry';
 import type { Point } from './geometry';
 import { generateOffsets, generateMedialAxis } from './geometry-tools';
 import * as turf from '@turf/turf';
@@ -20,6 +27,7 @@ export interface PlacementOptions {
     minSignalStrength?: number; // -90 to -40 dBm
     placementArea?: Point[]; // Optional polygon for filtering
     placementAreaEnabled?: boolean; // New flag
+    offsetStep?: number; // Step for Large Room Offsets (m){
 }
 
 interface ProcessedRoom {
@@ -88,8 +96,9 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
     // Detect Rooms
     const rawRooms = detectRooms(walls);
 
-    // Global Accumulator for Candidates
-    const candidates: Candidate[] = [];
+    // Candidate Storage
+    // Added isCorner to protect offset corners from density optimization
+    const candidates: { p: Point, priority: Priority, isCorner?: boolean }[] = [];
 
     const finalAnchors: Omit<Anchor, 'id'>[] = [];
 
@@ -155,13 +164,13 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
 
         const edges: Point[][] = [];
         const visitedEdges = new Set<string>();
-        const pointKey = (p: Point) => `${Math.round(p.x)},${Math.round(p.y)}`;
+        const pointKey = (p: Point) => `${Math.round(p.x)},${Math.round(p.y)} `;
 
         const edgeKey = (p1: Point, p2: Point) => {
             // Order independent
             const k1 = pointKey(p1);
             const k2 = pointKey(p2);
-            return k1 < k2 ? `${k1}|${k2}` : `${k2}|${k1}`;
+            return k1 < k2 ? `${k1}| ${k2} ` : `${k2}| ${k1} `;
         };
 
         nodes.forEach(startNode => {
@@ -274,7 +283,7 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
             }
         }
 
-        console.log(`[AutoPlacement] Room Area: ${areaM2.toFixed(1)}m2, Type: ${type}`);
+        console.log(`[AutoPlacement] Room Area: ${areaM2.toFixed(1)} m2, Type: ${type} `);
 
         if (type === 'large') {
             // Processing continues to specialized function
@@ -352,7 +361,7 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
         if (type === 'compact') {
             const center = getPolygonCentroid(roomPoly);
             addCandidate(center, 'critical');
-            console.log(`[AutoPlacement] Room (Center): ${center.x}, ${center.y}`);
+            console.log(`[AutoPlacement] Room(Center): ${center.x}, ${center.y} `);
             return;
         }
 
@@ -377,7 +386,7 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
             // This handles cases where buildRobustGraph might have simplified/snapped the Y-junction away.
             const rawNodeCounts = new Map<string, number>();
             const rawNodeMap = new Map<string, Point>();
-            const getRawKey = (p: Point) => `${Math.round(p.x / 5)},${Math.round(p.y / 5)}`; // Grid snap 5px
+            const getRawKey = (p: Point) => `${Math.round(p.x / 5)},${Math.round(p.y / 5)} `; // Grid snap 5px
 
             medialAxis.forEach(seg => {
                 seg.forEach(p => {
@@ -439,7 +448,7 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
                     // Check if we already added something close?
                     if (!joints.some(j => dist(j, cluster.center) < jointTolerancePx)) {
                         joints.push(cluster.center);
-                        console.log(`[AutoPlacement] Found Raw Joint (Clustered) at ${cluster.center.x}, ${cluster.center.y}`);
+                        console.log(`[AutoPlacement] Found Raw Joint(Clustered) at ${cluster.center.x}, ${cluster.center.y} `);
                     }
                 }
             });
@@ -453,7 +462,7 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
             const VERTEX_TOLERANCE = 20;
 
             const getClusterId = (p: Point): string => {
-                const rawKey = `${Math.round(p.x)},${Math.round(p.y)}`;
+                const rawKey = `${Math.round(p.x)},${Math.round(p.y)} `;
                 if (vertexIdMap.has(rawKey)) return vertexIdMap.get(rawKey)!;
 
                 // Check existing clusters
@@ -492,7 +501,7 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
                     // Check dups against existing joints
                     if (!joints.some(j => dist(j, center) < VERTEX_TOLERANCE)) {
                         joints.push(center);
-                        console.log(`[AutoPlacement] Found Graph Degree-3 Joint at ${center.x}, ${center.y}`);
+                        console.log(`[AutoPlacement] Found Graph Degree - 3 Joint at ${center.x}, ${center.y} `);
                     }
                 }
             });
@@ -500,7 +509,7 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
             // 2.b Rebuild Graph Topology from Stitched Axis to find Node Degrees
             const nodeDegrees = new Map<string, number>();
             const nodeMap = new Map<string, Point>();
-            const getKey = (p: Point) => `${Math.round(p.x)},${Math.round(p.y)}`;
+            const getKey = (p: Point) => `${Math.round(p.x)},${Math.round(p.y)} `;
 
             stitchedAxis.forEach(path => {
                 if (path.length < 2) return;
@@ -589,7 +598,7 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
                 if (isTJunction) {
                     if (!joints.some(j => dist(j, tip) < TJUNCTION_TOLERANCE_FINAL)) {
                         joints.push(tip);
-                        console.log(`[AutoPlacement] Found Geometric T-Junction at ${tip.x}, ${tip.y}`);
+                        console.log(`[AutoPlacement] Found Geometric T - Junction at ${tip.x}, ${tip.y} `);
                     }
                 }
             });
@@ -698,9 +707,9 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
                 if (!offsetPolys || offsetPolys.length === 0) break;
 
                 offsetPolys.forEach(poly => {
-                    // 1. Corners
+                    // 1. Corners (Mark as isCorner=true)
                     poly.forEach(vertex => {
-                        candidates.push({ p: vertex, priority: 'critical' });
+                        candidates.push({ p: vertex, priority: 'critical', isCorner: true });
                     });
 
                     // 2. Edges
@@ -794,7 +803,7 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
         const nodeCoords = new Map<string, Point>();
         medialAxis.forEach(seg => {
             seg.forEach(p => {
-                const k = `${Math.round(p.x)},${Math.round(p.y)}`;
+                const k = `${Math.round(p.x)},${Math.round(p.y)} `;
                 nodeCounts.set(k, (nodeCounts.get(k) || 0) + 1);
                 nodeCoords.set(k, p);
             });
@@ -944,14 +953,165 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
                     showRadius: options.showRadius ?? true,
                     shape: options.shape || 'circle',
                     power: -40,
-                    txPower: 0
+                    txPower: 0,
+                    isCorner: c.isCorner // Pass flag
                 });
             }
         }
     });
 
-    return finalAnchors.map(a => ({
+    let resultAnchors = finalAnchors;
+
+    // --- STRICT AREA FILTERING (Final Guard) ---
+    // Since sidebar only passes placementArea if enabled, presence check is sufficient.
+    if (options.placementArea && options.placementArea.length >= 3) {
+        const area = options.placementArea;
+        resultAnchors = finalAnchors.filter(a => isPointInPolygon({ x: a.x, y: a.y }, area));
+    }
+
+    return resultAnchors.map(a => ({
         ...a,
         isAuto: true
     }));
+};
+
+// --- DENSITY OPTIMIZATION (Button Logic) ---
+export const densityOptimization = (
+    anchors: Anchor[],
+    thresholdN: number, // Overlap Threshold (Remove if overlaps >= N)
+    scaleRatio: number,
+    globalRadius: number,
+    walls: Wall[] = [],
+    targetScope: 'small' | 'large' | 'all' = 'all',
+    placementArea: Point[] | undefined = undefined // NEW: Optional Area Constraint
+): Anchor[] => {
+    // 1. Identify Scope
+    let scopePolygons: Point[][] = [];
+    if (walls.length > 0 && targetScope !== 'all') {
+        const rooms = detectRooms(walls);
+
+        rooms.forEach((poly, idx) => {
+            const rawArea = Math.abs(calculatePolygonArea(poly));
+            const area = rawArea / (scaleRatio * scaleRatio);
+            const isSmall = area <= 110;
+
+            if (targetScope === 'small' && isSmall) scopePolygons.push(poly);
+            else if (targetScope === 'large' && !isSmall) scopePolygons.push(poly);
+        });
+    }
+
+    // 2. Filter Candidates (Anchors allowed to be removed)
+    // - Must be AUTO
+    // - Must be in Scope (if defined)
+    // - Must be in Placement Area (if defined)
+    const candidates: Anchor[] = [];
+    const others: Anchor[] = [];
+
+    // Pre-calculate Turf Polygon for Area if needed
+    let areaPoly: any = null;
+    if (placementArea && placementArea.length >= 3) {
+        const coords = placementArea.map(p => [p.x, p.y]);
+        if (coords[0][0] !== coords[coords.length - 1][0]) coords.push(coords[0]);
+        areaPoly = turf.polygon([coords]);
+    }
+
+    anchors.forEach(a => {
+        if (!a.isAuto || a.locked) {
+            others.push(a);
+            return;
+        }
+
+        // Check Placement Area Constraint FIRST
+        if (areaPoly) {
+            const pt = turf.point([a.x, a.y]);
+            if (!turf.booleanPointInPolygon(pt, areaPoly)) {
+                others.push(a); // Outside area -> Protect it (Treat as 'other')
+                return;
+            }
+        }
+
+        // Check Scope Constraint
+        if (scopePolygons.length > 0) {
+            const pt = turf.point([a.x, a.y]);
+            let inScope = false;
+            for (const poly of scopePolygons) {
+                // simple bbox check first? Turf is fast enough.
+                const coords = poly.map(p => [p.x, p.y]);
+                // Close loop
+                if (coords[0][0] !== coords[coords.length - 1][0]) coords.push(coords[0]);
+                const turfPoly = turf.polygon([coords]);
+                if (turf.booleanPointInPolygon(pt, turfPoly)) {
+                    inScope = true;
+                    break;
+                }
+            }
+            if (!inScope) {
+                others.push(a);
+                return;
+            }
+        }
+
+        candidates.push(a);
+    });
+
+    // 3. Sort Candidates: Strictly by ID (User Request)
+    // "start from minimum id number"
+    candidates.sort((a, b) => {
+        // Stable sort by ID
+        return a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+
+
+    // 4. Sequential Optimization Loop with RESTART
+    let activeCandidates = [...candidates];
+    let restart = true;
+    let ops = 0;
+    const MAX_OPS = candidates.length * candidates.length + 1000;
+
+    while (restart) {
+        restart = false;
+        const currentPool = [...activeCandidates, ...others];
+
+        for (let i = 0; i < activeCandidates.length; i++) {
+            if (ops++ > MAX_OPS) {
+                console.warn("[Density] Max Ops limit reached.");
+                break;
+            }
+
+            const candidate = activeCandidates[i];
+
+            // Count Overlaps
+            let overlapCount = 0;
+            const factor = 1.0; // Match UI overlap logic (1.0 = Full Radius)
+            const rPx = ((candidate.radius || globalRadius) * scaleRatio) * factor;
+
+            for (const other of currentPool) {
+                if (candidate.id === other.id) continue;
+
+                // Overlap Check
+                const rOther = ((other.radius || globalRadius) * scaleRatio) * factor;
+                const intersectDist = rPx + rOther;
+                const d = Math.sqrt((candidate.x - other.x) ** 2 + (candidate.y - other.y) ** 2);
+
+                if (d <= intersectDist * 1.01) {
+                    overlapCount++;
+                }
+            }
+
+            if (overlapCount >= thresholdN) {
+                // DELETE
+
+                activeCandidates.splice(i, 1);
+                restart = true;
+                break; // Break inner loop, restart outer
+            }
+        }
+    }
+
+    const finalAnchors = [...activeCandidates, ...others];
+
+
+
+    return finalAnchors;
 };

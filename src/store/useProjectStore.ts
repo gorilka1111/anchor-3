@@ -30,6 +30,7 @@ interface ProjectState {
     showOffsets: boolean;
     offsetStep: number; // Disatnce in meters
     showSkeleton: boolean;
+    showOverlapCounts: boolean;
     skeletonMode: 'none' | 'full' | 'simplified'; // New Mode
     showMedialAxis: boolean;
     medialAxisStep: number;
@@ -97,6 +98,8 @@ interface ProjectState {
     setTheme: (theme: 'dark' | 'light') => void;
     setIsSettingsOpen: (v: boolean) => void;
     setIsAutoPlacementOpen: (v: boolean) => void;
+    setCentroids: (v: boolean) => void;
+    setShowOverlapCounts: (v: boolean) => void;
     setOptimizationSettings: (settings: Partial<ProjectState['optimizationSettings']>) => void;
 
     addWall: (wall: Omit<Wall, 'id'>) => void;
@@ -194,6 +197,7 @@ export const useProjectStore = create<ProjectState>()(
             rooms: true,
             roomLabels: true,
             centroids: false,
+            showOverlapCounts: false,
             activeTool: 'select',
             selectedIds: [],
             wallPreset: 'thick',
@@ -205,7 +209,7 @@ export const useProjectStore = create<ProjectState>()(
 
             placementArea: null,
             setPlacementArea: (area) => set({ placementArea: area }),
-            placementAreaEnabled: true,
+            placementAreaEnabled: false,
             setPlacementAreaEnabled: (enabled) => set({ placementAreaEnabled: enabled }),
             lastLoaded: 0, // Timestamp of last project load
 
@@ -282,12 +286,14 @@ export const useProjectStore = create<ProjectState>()(
             setHeatmapResolution: (res) => set({ heatmapResolution: res }),
             setHeatmapColorMode: (mode) => set({ heatmapColorMode: mode }),
             setHeatmapThresholds: (t) => set({ heatmapThresholds: t }),
-
+            setTheme: (theme) => set({ theme }),
             setIsSettingsOpen: (v) => set({ isSettingsOpen: v }),
             setIsAutoPlacementOpen: (v) => set({ isAutoPlacementOpen: v }),
-            setOptimizationSettings: (s) => set((state) => ({
-                optimizationSettings: { ...state.optimizationSettings, ...s }
+            setCentroids: (v) => set((state) => ({
+                centroids: v,
+                layers: { ...state.layers, centroids: v }
             })),
+            setShowOverlapCounts: (v) => set({ showOverlapCounts: v }),
 
 
             alignAnchors: (type) => set((state) => {

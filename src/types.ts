@@ -33,6 +33,7 @@ export interface Anchor {
     txPower?: number; // Transmit Power in dBm (Default 0)
     isAuto?: boolean; // Flag for auto-placed anchors
     locked?: boolean; // Prevent move/delete
+    isCorner?: boolean; // Protected from density optimization
 }
 
 export interface Dimension {

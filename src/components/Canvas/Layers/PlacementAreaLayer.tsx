@@ -66,6 +66,12 @@ export const PlacementAreaLayer: React.FC = () => {
                     stroke="white"
                     strokeWidth={2}
                     draggable
+                    onMouseDown={(e) => {
+                        e.cancelBubble = true;
+                    }}
+                    onDragStart={(e) => {
+                        e.cancelBubble = true;
+                    }}
                     onDragMove={handleDragMove(i)}
                     onMouseEnter={(e) => {
                         const container = e.target.getStage()?.container();
