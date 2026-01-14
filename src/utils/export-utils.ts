@@ -1,5 +1,5 @@
 import Konva from 'konva';
-import jsPDF from 'jspdf'; // Keep jsPDF for types, although we use pdf-lib for advanced export
+
 
 interface ExportOptions {
     format: 'png' | 'pdf';
@@ -117,14 +117,7 @@ export const exportCanvas = async (stage: Konva.Stage, options: ExportOptions) =
     ghostStage.draw();
 
     // Verify Dimensions
-    if (format === 'pdf') {
-        alert(`Debug Export:
-         Region: ${Math.round(exportRect.width)} x ${Math.round(exportRect.height)}
-         Grid Hidden: ${!!gridLinesNode}
-         Dimensions Layer Found: ${!!dimGroup}
-         Visible: ${dimGroup ? dimGroup.isVisible() : 'N/A'}
-         `);
-    }
+
 
     try {
         const defaultName = `project-${new Date().toISOString().slice(0, 10)}`;

@@ -115,7 +115,6 @@ const THEME_COLORS = {
 };
 
 export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpenMenu, onOpenScaleModal }) => {
-    console.log("InteractionLayer mounted - Force Refresh");
     const { activeTool, addWall, addWalls, addAnchor, setTool, walls, anchors, setSelection, wallPreset, standardWallThickness, thickWallThickness, wideWallThickness, setAnchorMode, removeWall, removeAnchor, updateAnchors, removeDimension, dimensions, anchorRadius, theme, setExportRegion, exportRegion } = useProjectStore();
 
     const colors = THEME_COLORS[theme || 'dark'] || THEME_COLORS.dark;
@@ -140,7 +139,6 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
     const panStartTime = useRef<number>(0);
     const lastDragPos = useRef<Point | null>(null);
     const isMouseDown = useRef(false);
-    // const isHistoryPaused = useRef(false); // Removed unused
 
 
     const dragTextId = useRef<string | null>(null);
@@ -149,15 +147,12 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
     // Dimension Line Drag State (Ref)
     const dragDimLineId = useRef<string | null>(null);
 
-    // Moved early return after all hooks to satisfy Rules of Hooks!
-    // Moved early return to end of function to satisfy Rules of Hooks
+
 
 
     // ADDED: Export Event Listener
     useEffect(() => {
         const handleExportRequest = async (e: any) => {
-            // DEBUG ALERT
-            // alert('Event Received in InteractionLayer');
             const { detail } = e;
             if (stage) {
                 try {
@@ -224,6 +219,14 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             // Tool Shortcuts
             if (activeTool !== 'scale') { // Don't interrupt scale calib if typing? (though no typing there)
                 const key = e.key.toLowerCase();
+
+                // Advanced Wall Tool Shortcut (Shift+R)
+                if (key === 'r' && e.shiftKey) {
+                    if (activeTool === 'select' || activeTool.startsWith('wall') || activeTool.startsWith('anchor')) {
+                        setTool('wall_rect_edge');
+                        return;
+                    }
+                }
 
                 // Undo / Redo
                 if ((e.ctrlKey || e.metaKey) && key === 'z') {
@@ -327,33 +330,22 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
         };
     }, [setTool, setSelection, setAnchorMode, activeTool, points]); // Added points to deps
 
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (activeTool === 'select' || activeTool.startsWith('wall') || activeTool.startsWith('anchor')) {
-                if (e.key.toLowerCase() === 'r' && e.shiftKey) {
-                    setTool('wall_rect_edge');
-                }
-            }
-        };
 
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activeTool, setTool]);
 
     // Interaction Handlers (Moved to Top Level)
 
     const getStagePoint = (): Point | null => {
-        const pos = stage.getPointerPosition();
+        const pos = stage?.getPointerPosition();
         if (!pos) return null;
-        const scale = stage.scaleX();
+        const scale = (stage?.scaleX() || 1);
         return {
-            x: (pos.x - stage.x()) / scale,
-            y: (pos.y - stage.y()) / scale,
+            x: (pos.x - (stage?.x() || 0)) / scale,
+            y: (pos.y - (stage?.y() || 0)) / scale,
         };
     };
 
     const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
-        const stagePos = stage.getPointerPosition();
+        const stagePos = stage?.getPointerPosition();
         if (!stagePos) return;
         const pos = getStagePoint();
         if (!pos) return;
@@ -392,15 +384,10 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                         // S we probably need to know offset?
                         // Actually, if we just want to select the "Group", we usually treat x,y as top-left.
                         // But importDXF keeps original coordinates.
-                        // So the group is at x,y. The content is at x + v.x, y + v.y.
-
-                        // If calculating extents, we found minX, minY.
-                        // Usually we want to normalize so (0,0) is top-left.
-                        // BUT CURRENTLY we don't normalize vertices in importDXF.
                         // So the content is drawn at various places.
 
-                        // If we want selection to work nicely, we should probably normalize the DXF content 
-                        // so that (0,0) is minX, minY. OR we store minX/minY in the object and use it here.
+                        // If calculating extents, we found minX, minY.
+                        // Usually we want to normalize so (0,0) is minX, minY. OR we store minX/minY in the object and use it here.
 
                         // Let's assume for this fix that users can just click "roughly" where it is.
                         // But strictly speaking, if lines are at 1000,1000, and obj.x=0, they appear at 1000,1000.
@@ -559,7 +546,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
         if (e.evt.button === 2) {
             // Check for Wall Context Menu
             const state = useProjectStore.getState();
-            const hitWall = getHitWall(pos, state.walls, 10 / stage.scaleX());
+            const hitWall = getHitWall(pos, state.walls, 10 / (stage?.scaleX() || 1));
 
             // If we clicked a wall
             if (hitWall) {
@@ -626,7 +613,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             // Simply set the first point. Logic for click vs drag will be in MouseUp.
             if (!points.length) {
                 const state = useProjectStore.getState();
-                const snap = (state.layers.walls || state.layers.anchors) ? getSnapPoint(pos, walls, anchors, 20 / stage.scaleX()) : null;
+                const snap = (state.layers.walls || state.layers.anchors) ? getSnapPoint(pos, walls, anchors, 20 / (stage?.scaleX() || 1)) : null;
                 setPoints([snap ? snap.point : pos]);
             }
             // Wall Tool
@@ -635,7 +622,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                 let finalPos = pos;
                 // Check if snapping allowed (hidden layer = no snap)
                 const state = useProjectStore.getState();
-                const snap = state.layers.walls ? getSnapPoint(pos, walls, anchors, 20 / (stage.scaleX())) : null;
+                const snap = state.layers.walls ? getSnapPoint(pos, walls, anchors, 20 / (stage?.scaleX() || 1)) : null;
 
                 if (snap) {
                     finalPos = snap.point;
@@ -674,7 +661,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             if (e.evt.button === 0) {
                 let finalPos = pos;
                 const state = useProjectStore.getState();
-                const snap = state.layers.walls ? getSnapPoint(pos, walls, anchors, 20 / (stage.scaleX())) : null;
+                const snap = state.layers.walls ? getSnapPoint(pos, walls, anchors, 20 / (stage?.scaleX() || 1)) : null;
                 if (snap) {
                     finalPos = snap.point;
                     // Auto-Split Logic for Start Point
@@ -703,10 +690,10 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                         const p3 = { x: x2, y: y1 };
                         const p4 = { x: x1, y: y2 };
 
-                        const snapP3 = state.layers.walls ? getSnapPoint(p3, walls, anchors, 20 / (stage.scaleX())) : null;
+                        const snapP3 = state.layers.walls ? getSnapPoint(p3, walls, anchors, 20 / (stage?.scaleX() || 1)) : null;
                         if (snapP3 && snapP3.type === 'edge' && snapP3.id) state.splitWall(snapP3.id, snapP3.point);
 
-                        const snapP4 = state.layers.walls ? getSnapPoint(p4, walls, anchors, 20 / (stage.scaleX())) : null;
+                        const snapP4 = state.layers.walls ? getSnapPoint(p4, walls, anchors, 20 / (stage?.scaleX() || 1)) : null;
                         if (snapP4 && snapP4.type === 'edge' && snapP4.id) state.splitWall(snapP4.id, snapP4.point);
 
                         const params = getWallParams(wallPreset, standardWallThickness, thickWallThickness, wideWallThickness);
@@ -728,7 +715,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             if (e.evt.button === 0) {
                 let finalPos = pos;
                 const state = useProjectStore.getState();
-                const snap = state.layers.walls ? getSnapPoint(pos, walls, anchors, 20 / (stage.scaleX())) : null;
+                const snap = state.layers.walls ? getSnapPoint(pos, walls, anchors, 20 / (stage?.scaleX() || 1)) : null;
                 if (snap) {
                     finalPos = snap.point;
                     // Auto-Split Logic for Start Point
@@ -784,10 +771,10 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     const p3 = { x: p3x, y: p3y };
                     const p4 = { x: p4x, y: p4y };
 
-                    const snapP3 = state.layers.walls ? getSnapPoint(p3, walls, anchors, 20 / (stage.scaleX())) : null;
+                    const snapP3 = state.layers.walls ? getSnapPoint(p3, walls, anchors, 20 / (stage?.scaleX() || 1)) : null;
                     if (snapP3 && snapP3.type === 'edge' && snapP3.id) state.splitWall(snapP3.id, snapP3.point);
 
-                    const snapP4 = state.layers.walls ? getSnapPoint(p4, walls, anchors, 20 / (stage.scaleX())) : null;
+                    const snapP4 = state.layers.walls ? getSnapPoint(p4, walls, anchors, 20 / (stage?.scaleX() || 1)) : null;
                     if (snapP4 && snapP4.type === 'edge' && snapP4.id) state.splitWall(snapP4.id, snapP4.point);
 
                     const params = getWallParams(wallPreset, standardWallThickness, thickWallThickness, wideWallThickness);
@@ -839,7 +826,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
                 const d = dist(pos, start);
                 // Tolerance 10px screen space
-                const tolerance = 10 / stage.scaleX();
+                const tolerance = 10 / (stage?.scaleX() || 1);
 
                 if (currentPoints.length >= 3 && d < tolerance) {
                     // Close the loop (points are already correct for polygon, just stop adding)
@@ -899,13 +886,13 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
         // Panning
         if (isPanning && lastPanPos.current) {
             e.evt.preventDefault();
-            const stagePos = stage.getPointerPosition();
+            const stagePos = stage?.getPointerPosition();
             if (stagePos) {
                 const dx = stagePos.x - lastPanPos.current.x;
                 const dy = stagePos.y - lastPanPos.current.y;
-                stage.position({ x: stage.x() + dx, y: stage.y() + dy });
+                stage?.position({ x: (stage?.x() || 0) + dx, y: (stage?.y() || 0) + dy });
                 lastPanPos.current = { x: stagePos.x, y: stagePos.y };
-                stage.batchDraw();
+                stage?.batchDraw();
             }
             return;
         }
@@ -985,7 +972,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
         // Tool Mouse Move checks...
         if (activeTool === 'wall' || activeTool === 'wall_rect' || activeTool === 'wall_rect_edge' || activeTool === 'dimension') {
             const state = useProjectStore.getState();
-            const snap = (state.layers.walls || state.layers.anchors) ? getSnapPoint(pos, walls, anchors, 20 / (stage.scaleX())) : null;
+            const snap = (state.layers.walls || state.layers.anchors) ? getSnapPoint(pos, walls, anchors, 20 / ((stage?.scaleX() || 1))) : null;
             setCurrentMousePos(snap ? snap.point : pos);
         } else if (activeTool === 'scale' && points.length > 0) {
             setCurrentMousePos(pos);
@@ -1056,12 +1043,12 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             const distMoved = dist(start, pos);
 
             // If moved very little (< 5px), treat as CLICK (Auto Wall Dim)
-            const clickTol = 5 / stage.scaleX();
+            const clickTol = 5 / (stage?.scaleX() || 1);
 
             if (distMoved < clickTol) {
                 // Check logic for Wall Dim
                 const clickPos = pos;
-                const tol = 10 / stage.scaleX();
+                const tol = 10 / (stage?.scaleX() || 1);
                 let hitWall = null;
                 const state = useProjectStore.getState();
 
@@ -1086,7 +1073,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     const len = Math.hypot(dx, dy);
                     const nx = -dy / len;
                     const ny = dx / len;
-                    const offset = 30 / (stage.scaleX() || 1);
+                    const offset = 30 / ((stage?.scaleX() || 1) || 1);
 
                     const cx = clickPos.x - x1;
                     const cy = clickPos.y - y1;
@@ -1124,7 +1111,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                 // "Click and pressing without release" -> Drag behavior.
                 // On Release:
                 const state = useProjectStore.getState();
-                const snap = (state.layers.walls || state.layers.anchors) ? getSnapPoint(pos, walls, anchors, 20 / stage.scaleX()) : null;
+                const snap = (state.layers.walls || state.layers.anchors) ? getSnapPoint(pos, walls, anchors, 20 / (stage?.scaleX() || 1)) : null;
                 const end = snap ? snap.point : pos;
                 const distPx = Math.hypot(end.x - start.x, end.y - start.y);
                 const scaleRatio = useProjectStore.getState().scaleRatio;
@@ -1150,7 +1137,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             let snap: import('../../utils/geometry').SnapResult | null = null;
             const state = useProjectStore.getState();
             if ((activeTool === 'wall_rect' || activeTool === 'wall_rect_edge') && state.layers.walls) {
-                snap = getSnapPoint(pos, walls, anchors, 20 / (stage.scaleX()));
+                snap = getSnapPoint(pos, walls, anchors, 20 / ((stage?.scaleX() || 1)));
                 if (snap) finalPos = snap.point;
             }
 
@@ -1173,10 +1160,10 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                             const p3 = { x: x2, y: y1 };
                             const p4 = { x: x1, y: y2 };
 
-                            const snapP3 = state.layers.walls ? getSnapPoint(p3, walls, anchors, 20 / (stage.scaleX())) : null;
+                            const snapP3 = state.layers.walls ? getSnapPoint(p3, walls, anchors, 20 / ((stage?.scaleX() || 1))) : null;
                             if (snapP3 && snapP3.type === 'edge' && snapP3.id) state.splitWall(snapP3.id, snapP3.point);
 
-                            const snapP4 = state.layers.walls ? getSnapPoint(p4, walls, anchors, 20 / (stage.scaleX())) : null;
+                            const snapP4 = state.layers.walls ? getSnapPoint(p4, walls, anchors, 20 / ((stage?.scaleX() || 1))) : null;
                             if (snapP4 && snapP4.type === 'edge' && snapP4.id) state.splitWall(snapP4.id, snapP4.point);
 
                             const params = getWallParams(wallPreset, standardWallThickness, thickWallThickness, wideWallThickness);
@@ -1220,9 +1207,9 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
                         const p3 = { x: p3x, y: p3y };
                         const p4 = { x: p4x, y: p4y };
-                        const snapP3 = state.layers.walls ? getSnapPoint(p3, walls, anchors, 20 / (stage.scaleX())) : null;
+                        const snapP3 = state.layers.walls ? getSnapPoint(p3, walls, anchors, 20 / ((stage?.scaleX() || 1))) : null;
                         if (snapP3 && snapP3.type === 'edge' && snapP3.id) state.splitWall(snapP3.id, snapP3.point);
-                        const snapP4 = state.layers.walls ? getSnapPoint(p4, walls, anchors, 20 / (stage.scaleX())) : null;
+                        const snapP4 = state.layers.walls ? getSnapPoint(p4, walls, anchors, 20 / ((stage?.scaleX() || 1))) : null;
                         if (snapP4 && snapP4.type === 'edge' && snapP4.id) state.splitWall(snapP4.id, snapP4.point);
 
                         // Note: P1 and P2 splits were handled in previous steps/clicks, but could re-check if dragged? 
@@ -1321,15 +1308,9 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     });
                 }
 
-                // Check Imported Objects (Image / DXF) - ONLY if Alt + Drag (Box Selection)
-                // If regular selection box, we can also include them if we want unified selection.
-                // User request: "alt+squere select". But usually imports are passive unless alt is held? or just selection tool?
-                // Let's assume selection tool selects everything.
 
-                // Check Imported Objects (Image / DXF) - ONLY if Alt + Drag (Box Selection)
-                // If regular selection box, we can also include them if we want unified selection.
-                // User request: "alt+squere select". But usually imports are passive unless alt is held? or just selection tool?
-                // Let's assume selection tool selects everything.
+
+
 
                 if (e.evt.altKey) {
                     state.importedObjects.forEach(obj => {
@@ -1397,7 +1378,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                 const clickPos = getStagePoint();
                 if (clickPos) {
                     let idsToSelect: string[] = [];
-                    const tol = 10 / (stage.scaleX() || 1);
+                    const tol = 10 / ((stage?.scaleX() || 1) || 1);
 
                     // Check Direct Click on Text
                     if (e.target.name() === 'dim-text') {
@@ -1961,7 +1942,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                             radius={handleRadius}
                             fill="#00aaff"
                             stroke="white"
-                            strokeWidth={2 / (stage.scaleX())}
+                            strokeWidth={2 / ((stage?.scaleX() || 1))}
                             draggable
                             onDragStart={(e) => {
                                 e.cancelBubble = true;
@@ -1973,7 +1954,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                                 // Snap
                                 if (state.layers.walls) {
                                     const otherWalls = state.walls.filter(w => w.id !== id);
-                                    const snap = getSnapPoint(newPos, otherWalls, anchors, 20 / (stage.scaleX()));
+                                    const snap = getSnapPoint(newPos, otherWalls, anchors, 20 / ((stage?.scaleX() || 1)));
                                     if (snap) {
                                         newPos = snap.point;
                                         e.target.position(newPos);
@@ -1998,7 +1979,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                             radius={handleRadius}
                             fill={colors.preview}
                             stroke={colors.anchorStroke}
-                            strokeWidth={2 / (stage.scaleX())}
+                            strokeWidth={2 / ((stage?.scaleX() || 1))}
                             draggable
                             onDragStart={(e) => e.cancelBubble = true}
                             onDragMove={(e) => {
@@ -2008,7 +1989,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                                 // Snap
                                 if (state.layers.walls) {
                                     const otherWalls = state.walls.filter(w => w.id !== id);
-                                    const snap = getSnapPoint(newPos, otherWalls, anchors, 20 / (stage.scaleX()));
+                                    const snap = getSnapPoint(newPos, otherWalls, anchors, 20 / ((stage?.scaleX() || 1)));
                                     if (snap) {
                                         newPos = snap.point;
                                         e.target.position(newPos);
@@ -2050,7 +2031,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                             radius={handleRadius}
                             fill="#00aaff"
                             stroke="white"
-                            strokeWidth={2 / (stage.scaleX())}
+                            strokeWidth={2 / ((stage?.scaleX() || 1))}
                             draggable
                             onDragStart={(e) => {
                                 e.cancelBubble = true;
@@ -2065,7 +2046,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                                 let newPos = { x: e.target.x(), y: e.target.y() };
                                 const state = useProjectStore.getState();
                                 // Snap
-                                const snap = (state.layers.walls || state.layers.anchors) ? getSnapPoint(newPos, walls, anchors, 20 / (stage.scaleX())) : null;
+                                const snap = (state.layers.walls || state.layers.anchors) ? getSnapPoint(newPos, walls, anchors, 20 / ((stage?.scaleX() || 1))) : null;
                                 if (snap) {
                                     newPos = snap.point;
                                     e.target.position(newPos);
@@ -2091,7 +2072,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                             radius={handleRadius}
                             fill="#00aaff"
                             stroke="white"
-                            strokeWidth={2 / (stage.scaleX())}
+                            strokeWidth={2 / ((stage?.scaleX() || 1))}
                             draggable
                             onDragStart={(e) => {
                                 e.cancelBubble = true;
@@ -2106,7 +2087,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                                 let newPos = { x: e.target.x(), y: e.target.y() };
                                 const state = useProjectStore.getState();
                                 // Snap
-                                const snap = (state.layers.walls || state.layers.anchors) ? getSnapPoint(newPos, walls, anchors, 20 / (stage.scaleX())) : null;
+                                const snap = (state.layers.walls || state.layers.anchors) ? getSnapPoint(newPos, walls, anchors, 20 / ((stage?.scaleX() || 1))) : null;
                                 if (snap) {
                                     newPos = snap.point;
                                     e.target.position(newPos);
