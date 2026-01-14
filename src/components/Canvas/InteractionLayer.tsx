@@ -1032,9 +1032,8 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
         dragDimLineId.current = null;
         lastDragPos.current = null;
 
-        // Dimension Tool Click Detection (for Wall Auto-Dim)
         if (activeTool === 'dimension' && points.length === 1) {
-            const stagePos = stage.getPointerPosition();
+            const stagePos = stage?.getPointerPosition();
             if (!stagePos) return;
             const pos = getStagePoint();
             if (!pos) return;
@@ -1544,6 +1543,9 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
         const h = (maxY - minY) * padding || 10;
         if (w === 0 || h === 0) return;
 
+        if (w === 0 || h === 0) return;
+        if (!stage) return;
+
         const stageW = stage.width();
         const stageH = stage.height();
         const scale = Math.min(stageW / w, stageH / h);
@@ -1660,8 +1662,8 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
         // We rely on MouseUp for the actual trigger to distinguish click vs drag
     };
 
-    // Helper to check if we should show menu
     const checkRMBClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
+        if (!stage) return;
         const pointer = stage.getPointerPosition();
         if (!pointer || !lastPanPos.current) return;
 
@@ -1926,7 +1928,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
                 const selectedWallIds = state.selectedIds.filter(id => state.walls.some(w => w.id === id));
 
-                const handles: JSX.Element[] = [];
+                const handles: React.ReactElement[] = [];
                 const handleRadius = 6 / (stage?.scaleX() || 1);
 
                 selectedWallIds.forEach(id => {
@@ -2015,7 +2017,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                 if (!state.layers.dimensions) return null;
 
                 const selectedDimIds = state.selectedIds.filter(id => state.dimensions.some(d => d.id === id));
-                const handles: JSX.Element[] = [];
+                const handles: React.ReactElement[] = [];
                 const handleRadius = 6 / (stage?.scaleX() || 1);
 
                 selectedDimIds.forEach(id => {

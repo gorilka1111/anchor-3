@@ -365,10 +365,7 @@ export class WallDetector {
         return lines;
     }
 
-    private mergeLines(lines: DetectedLine[], angleThresh: number, distThresh: number): DetectedLine[] {
-        // Legacy wrapper if needed, but logic is moved to detect()
-        return lines;
-    }
+
 
     private mergeParallelLines(lines: DetectedLine[], angleThreshDeg: number, distThresh: number): DetectedLine[] {
         const merged: DetectedLine[] = [];

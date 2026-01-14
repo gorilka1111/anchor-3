@@ -2,7 +2,7 @@ import React from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 
 export const SelectionMenu: React.FC = () => {
-    const { selectedIds, walls, anchors, updateWall, removeWall, removeAnchor, removeDimension, setSelection, alignAnchors, theme } = useProjectStore();
+    const { selectedIds, walls, anchors, updateWall, removeWall, removeAnchor, setSelection, alignAnchors, theme } = useProjectStore();
 
     const isDark = theme === 'dark';
 

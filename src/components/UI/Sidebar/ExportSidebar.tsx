@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../../../store/useProjectStore';
 import { FileUp, Crop, FileText, Image as ImageIcon, Check } from 'lucide-react';
-import { exportCanvas } from '../../../utils/export-utils';
+
 
 export const ExportSidebar: React.FC = () => {
     const {
@@ -17,7 +17,7 @@ export const ExportSidebar: React.FC = () => {
     const [format, setFormat] = useState<'png' | 'pdf'>('pdf');
     const [pdfSize, setPdfSize] = useState<'a4' | 'a3' | 'a2' | 'a1' | 'a0'>('a4');
     const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
-    const [quality, setQuality] = useState(2); // Pixel Ratio
+    const quality = 2; // Pixel Ratio
 
     if (!isExportSidebarOpen) return null;
 

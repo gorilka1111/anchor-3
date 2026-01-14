@@ -22,7 +22,7 @@ export const importPDF = async (file: File): Promise<{ src: string, width: numbe
     await page.render({
         canvasContext: context,
         viewport: viewport
-    }).promise;
+    } as any).promise;
 
     return {
         src: canvas.toDataURL('image/png'),

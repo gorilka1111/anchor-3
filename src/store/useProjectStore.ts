@@ -19,7 +19,9 @@ interface ProjectState {
     wideWallThickness: number;
     anchorMode: 'manual' | 'auto';
     isScaleSet: boolean;
+
     lastLoaded: number; // Timestamp of last project load
+    wallPreset: 'default' | 'thick' | 'wide';
 
     // Anchor Settings
     anchorRadius: number;
@@ -293,7 +295,7 @@ export const useProjectStore = create<ProjectState>()(
             setHeatmapResolution: (res) => set({ heatmapResolution: res }),
             setHeatmapColorMode: (mode) => set({ heatmapColorMode: mode }),
             setHeatmapThresholds: (t) => set({ heatmapThresholds: t }),
-            setTheme: (theme) => set({ theme }),
+
             setIsSettingsOpen: (v) => set({ isSettingsOpen: v }),
             setIsAutoPlacementOpen: (v) => set({ isAutoPlacementOpen: v }),
             setCentroids: (v) => set((state) => ({
@@ -301,6 +303,9 @@ export const useProjectStore = create<ProjectState>()(
                 layers: { ...state.layers, centroids: v }
             })),
             setShowOverlapCounts: (v) => set({ showOverlapCounts: v }),
+            setOptimizationSettings: (settings) => set((state) => ({
+                optimizationSettings: { ...state.optimizationSettings, ...settings }
+            })),
 
 
             isExportSidebarOpen: false,

@@ -5,7 +5,6 @@ import {
     dist,
     getPolygonCentroid,
     getPolygonBBox,
-    getBBoxCenter,
     isPointInPolygon
 } from './geometry';
 import type { Point } from './geometry';
@@ -44,54 +43,15 @@ interface ProcessedRoom {
 
 type Priority = 'critical' | 'high' | 'normal';
 
-interface Candidate {
-    p: Point;
-    priority: Priority;
-}
+
 
 // Main Function: Advanced Auto-Placement (V2)
 export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, existingAnchors: Point[] = []): Omit<Anchor, 'id'>[] => {
     const { radius, scaleRatio, targetScope = 'all' } = options;
 
-    // Optimization Factors
-    // 1. Min Signal (dBm): Lower (e.g. -90) = Accept larger spacing. Higher (-40) = Tighter spacing.
-    // Map -90...-40 to a spacing multiplier?
-    // Let's rely on radius for drop-off calculation mostly, but adjust 'spacingFactor' based on coverageTarget.
 
-    // 2. Coverage Target (%): Higher = Tighter spacing
-    // Base overlap 1.9 (approx). 100% coverage might need 1.4-1.5 (closer to sqrt(2) or less). 
-    // 50% coverage might allow 2.5.
-    let densityMult = 1.0;
 
-    // 1. Coverage Factor (50% -> 1.3x, 100% -> 0.7x)
-    let coverageMod = 1.0;
-    if (options.coverageTarget) {
-        coverageMod = 1.3 - ((options.coverageTarget - 50) / 50) * 0.6;
-    }
 
-    // 2. Signal Factor (-90 -> 1.2x, -40 -> 0.6x)
-    let signalMod = 1.0;
-    if (options.minSignalStrength) {
-        // Normalize -90...-40 to 0...1
-        const norm = (options.minSignalStrength + 90) / 50;
-        signalMod = 1.2 - (norm * 0.6);
-    }
-
-    if (options.coverageTarget && options.minSignalStrength) {
-        densityMult = (coverageMod + signalMod) / 2;
-    } else if (options.coverageTarget) {
-        densityMult = coverageMod;
-    } else if (options.minSignalStrength) {
-        densityMult = signalMod;
-    }
-
-    // Target Spacing for Fill Logic
-    const baseFactor = options.spacingFactor || 1.9;
-    const factor = baseFactor * densityMult;
-
-    const spacingMeters = Math.max(3, factor * radius);
-    const spacingPx = spacingMeters * scaleRatio;
-    const snapDistPx = 1.5 * scaleRatio;
 
     // Detect Rooms
     const rawRooms = detectRooms(walls);
@@ -104,15 +64,9 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
 
     // Helper: Robust Graph Stitching
     const buildRobustGraph = (segments: Point[][], snapRadius: number): Point[][] => {
-        const uniquePoints: Point[] = [];
 
-        const getSnapped = (p: Point): Point => {
-            for (const up of uniquePoints) {
-                if (dist(p, up) < snapRadius) return up;
-            }
-            uniquePoints.push(p);
-            return p;
-        };
+
+
 
         // Pre-Process: Flatten and Cluster all points to find true nodes
         const allPoints = segments.flat();
@@ -223,18 +177,7 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
         candidates.push({ p, priority });
     };
 
-    const fillGaps = (p1: Point, p2: Point, thresholdPx: number, targetSpacingPx: number) => {
-        const d = dist(p1, p2);
-        if (d > thresholdPx) {
-            const numSegments = Math.ceil(d / targetSpacingPx);
-            const stepX = (p2.x - p1.x) / numSegments;
-            const stepY = (p2.y - p1.y) / numSegments;
-            for (let k = 1; k < numSegments; k++) {
-                const p = { x: p1.x + stepX * k, y: p1.y + stepY * k };
-                addCandidate(p, 'normal');
-            }
-        }
-    };
+
 
     // Pre-process and categorize rooms
     const processedRooms: ProcessedRoom[] = [];
@@ -243,11 +186,10 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
 
         // BBox and Area (Use shared implementations for consistency with RoomsLayer)
         const bbox = getPolygonBBox(roomPoly);
-        const bboxArea = bbox.width * bbox.height;
 
         const areaPx = Math.abs(calculatePolygonArea(roomPoly));
         const areaM2 = areaPx / (scaleRatio * scaleRatio);
-        const fillFactor = areaPx / bboxArea;
+
 
         // Medial Axis
         const medialAxis = generateMedialAxis(roomPoly, 2);
@@ -313,7 +255,7 @@ export const generateAutoAnchors = (walls: Wall[], options: PlacementOptions, ex
     });
 
     processedRooms.forEach(room => {
-        const { poly: roomPoly, type, bbox, areaM2, medialAxis, medialFeats, stitchedAxis } = room;
+        const { poly: roomPoly, type, areaM2, stitchedAxis, medialAxis } = room;
 
         // --- SCOPE FILTERING ---
         if (targetScope === 'small') {
@@ -1097,7 +1039,7 @@ export const densityOptimization = (
     if (walls.length > 0 && targetScope !== 'all') {
         const rooms = detectRooms(walls);
 
-        rooms.forEach((poly, idx) => {
+        rooms.forEach((poly) => {
             const rawArea = Math.abs(calculatePolygonArea(poly));
             const area = rawArea / (scaleRatio * scaleRatio);
             const isSmall = area <= 110;

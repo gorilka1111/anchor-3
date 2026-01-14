@@ -227,7 +227,7 @@ export const exportCanvas = async (stage: Konva.Stage, options: ExportOptions) =
             pdfDoc.setProducer('Anchor Planner Pro');
 
             const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
-            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
             await saveFile(blob, defaultName);
 
         } else {

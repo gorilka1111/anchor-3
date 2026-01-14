@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { WallDetector, type DetectedLine } from '../../utils/cv/WallDetector';
-import { X, Play, Loader2, Brush, Key, Move, MousePointer, Minus, Plus, Maximize2, RotateCcw, Wand2 } from 'lucide-react';
+import { X, Loader2, Wand2 } from 'lucide-react';
 
 interface WallDetectionModalProps {
     imageSrc: string;
@@ -31,7 +31,7 @@ export const WallDetectionModal: React.FC<WallDetectionModalProps> = ({ imageSrc
     const [debugImage, setDebugImage] = useState<ImageData | null>(null);
 
     // Detection Parameters
-    const [cannyLow, setCannyLow] = useState(50);
+    const [cannyLow] = useState(50);
     const [cannyHigh, setCannyHigh] = useState(150);
     const [minLineLen, setMinLineLen] = useState(50);
     const [maxLineGap, setMaxLineGap] = useState(10);
@@ -62,10 +62,15 @@ export const WallDetectionModal: React.FC<WallDetectionModalProps> = ({ imageSrc
     // The main app expects lines in PIXELS? Or METERS?
     // Usually the importer handles scaling. 
     // We should compute a scale factor to pass back.
+    // We should compute a scale factor to pass back.
+    // The main app expects lines in PIXELS? Or METERS?
+    // Usually the importer handles scaling. 
+    // We should compute a scale factor to pass back.
     const [scaleFactor, setScaleFactor] = useState(0.05); // Meters per Pixel
 
     const [baseMask, setBaseMask] = useState<ImageData | null>(null);
-    const [isMaskGenerating, setIsMaskGenerating] = useState(false);
+
+
 
     // Refs
     const imgRef = useRef<HTMLImageElement>(null);
@@ -90,7 +95,8 @@ export const WallDetectionModal: React.FC<WallDetectionModalProps> = ({ imageSrc
     useEffect(() => {
         if (!imgRef.current || !detector.isReady() || !isImageLoaded) return;
 
-        setIsMaskGenerating(true);
+        if (!imgRef.current || !detector.isReady() || !isImageLoaded) return;
+
         const timer = setTimeout(() => {
             if (imgRef.current) {
                 const mask = detector.getBinaryMask(imgRef.current, {
@@ -100,7 +106,6 @@ export const WallDetectionModal: React.FC<WallDetectionModalProps> = ({ imageSrc
                 });
                 setBaseMask(mask);
             }
-            setIsMaskGenerating(false);
         }, 50);
 
         return () => clearTimeout(timer);
@@ -517,8 +522,8 @@ export const WallDetectionModal: React.FC<WallDetectionModalProps> = ({ imageSrc
                                             setMode('DRAW');
                                             setBrushType('DRAW');
                                             // Force generation if missing
+                                            // Force generation if missing
                                             if (!baseMask && imgRef.current && detector.isReady()) {
-                                                setIsMaskGenerating(true);
                                                 setTimeout(() => {
                                                     const mask = detector.getBinaryMask(imgRef.current!, {
                                                         minWallThickness,
@@ -526,7 +531,6 @@ export const WallDetectionModal: React.FC<WallDetectionModalProps> = ({ imageSrc
                                                         removeText
                                                     });
                                                     setBaseMask(mask);
-                                                    setIsMaskGenerating(false);
                                                 }, 10);
                                             }
                                         }}

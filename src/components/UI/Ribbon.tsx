@@ -18,8 +18,8 @@ import {
     Grid, // Icon for Rooms
     Type, // Icon for Labels
     Signal, // Icon for Heatmap
-    Map, // Icon for Offsets
-    Network, // Icon for Skeleton
+
+
     FileUp // NEW Icon
 } from 'lucide-react';
 import { WallDetectionModal } from './WallDetectionModal';
@@ -59,11 +59,6 @@ export const Ribbon: React.FC = () => {
         toggleLayer,
         isScaleSet,
         // Geometry
-        showOffsets, setShowOffsets,
-        offsetStep, setOffsetStep,
-        showSkeleton, setShowSkeleton,
-        showMedialAxis, setShowMedialAxis,
-        medialAxisStep, setMedialAxisStep
     } = useProjectStore();
 
     const [isConfigOpen, setIsConfigOpen] = React.useState<boolean | string>(false);

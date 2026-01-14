@@ -32,7 +32,7 @@ export const WallsLayer: React.FC = () => {
                 return tA - tB;
             })
             .map(([key, groupWalls]) => {
-                const [thicknessStr, material] = key.split('|');
+                const [, material] = key.split('|');
                 const polygons = generateJoinedWalls(groupWalls, scaleRatio, walls);
 
                 // Generate Path Data
@@ -86,7 +86,7 @@ export const WallsLayer: React.FC = () => {
                         name="wall-fill"
                         data={pathData}
                         fill={patternImage ? undefined : fillColor}
-                        fillPatternImage={patternImage || undefined}
+                        fillPatternImage={(patternImage as any) || undefined}
                         strokeEnabled={false}
                         hitStrokeWidth={0}
                         fillRule="nonzero"

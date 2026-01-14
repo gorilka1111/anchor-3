@@ -45,45 +45,17 @@ const ActionButton: React.FC<ActionButtonProps> = ({ onClick, label, desc, color
     </button>
 );
 
-interface ControlSliderProps {
-    label: string;
-    value: number;
-    min: number;
-    max: number;
-    unit: string;
-    onChange: (val: number) => void;
-}
 
-const ControlSlider: React.FC<ControlSliderProps> = ({ label, value, min, max, unit, onChange }) => (
-    <div className="space-y-1.5">
-        <div className="flex justify-between text-xs text-gray-400">
-            <span>{label}</span>
-            <span className="font-mono text-gray-300">{value}{unit}</span>
-        </div>
-        <input
-            type="range"
-            min={min} max={max}
-            value={value}
-            onChange={(e) => onChange(Number(e.target.value))}
-            className="w-full h-1.5 bg-[#444] rounded-lg appearance-none cursor-pointer accent-blue-500"
-        />
-    </div>
-);
 
 // --- Main Component ---
 
 export const AutoPlacementSidebar: React.FC = () => {
     const {
-        isAutoPlacementOpen, setIsAutoPlacementOpen,
-        walls, anchors, layers, scaleRatio,
-        anchorRadius, setAnchorRadius,
-        showAnchorRadius, setShowAnchorRadius,
-        showMedialAxis, setShowMedialAxis,
+        isAutoPlacementOpen,
+        walls, anchors, scaleRatio,
+
         skeletonMode, setSkeletonMode,
         showOffsets, setShowOffsets, offsetStep, setOffsetStep,
-        showSkeleton, setShowSkeleton,
-        optimizationSettings, setOptimizationSettings,
-        setTool, activeTool, setAnchors,
         showOverlapCounts, setShowOverlapCounts,
         centroids, setCentroids,
         theme,
@@ -98,7 +70,7 @@ export const AutoPlacementSidebar: React.FC = () => {
     const isDark = theme === 'dark';
     const bgClass = isDark ? 'bg-[#1e1e1e]' : 'bg-white border-r border-gray-200';
     const textHeader = isDark ? 'text-gray-400' : 'text-gray-600';
-    const textNormal = isDark ? 'text-gray-300' : 'text-gray-800';
+
     const inputBg = isDark ? 'bg-[#333] border-[#444] text-white' : 'bg-gray-100 border-gray-300 text-gray-800';
 
     // --- Handlers ---
@@ -319,7 +291,7 @@ export const AutoPlacementSidebar: React.FC = () => {
                                 onClick={() => {
                                     const state = useProjectStore.getState();
                                     const isAreaActive = state.placementAreaEnabled && state.placementArea && state.placementArea.points.length > 2;
-                                    const area = isAreaActive ? state.placementArea.points : undefined;
+                                    const area = isAreaActive ? state.placementArea?.points : undefined;
                                     const effectiveScope = isAreaActive ? 'all' : densityTarget;
 
                                     const newAnchors = densityOptimization(

@@ -12,7 +12,9 @@ export const SettingsPanel: React.FC = () => {
 
     if (!isSettingsOpen) return null;
 
-    // ... handleThresholdChange ...
+    const handleThresholdChange = (key: keyof typeof heatmapThresholds, value: number) => {
+        setHeatmapThresholds({ ...heatmapThresholds, [key]: value });
+    };
 
     return (
         <div className="fixed top-16 right-0 bottom-0 w-80 panel-bg panel-border border-l shadow-2xl z-40 flex flex-col animate-in slide-in-from-right duration-200">
@@ -147,6 +149,8 @@ const ThresholdInput: React.FC<{
                 <span className="text-[10px] text-secondary">&lt;</span>
                 <input
                     type="number"
+                    min={min}
+                    max={max}
                     value={value}
                     onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
                     className="w-12 input-bg border panel-border rounded px-1 py-0.5 text-xs text-right text-primary focus:border-blue-500 outline-none"

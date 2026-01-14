@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { Line, Text, Group, Circle } from 'react-konva';
 import { useProjectStore } from '../../../store/useProjectStore';
 import { detectRooms, calculatePolygonArea } from '../../../utils/room-detection';
-import { getPolygonCentroid, getPolygonBBox } from '../../../utils/geometry';
+import { getPolygonCentroid } from '../../../utils/geometry';
 
 export const RoomsLayer: React.FC = () => {
     const { walls, layers, scaleRatio } = useProjectStore();
