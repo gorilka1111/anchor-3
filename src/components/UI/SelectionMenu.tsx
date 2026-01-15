@@ -2,7 +2,7 @@ import React from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 
 export const SelectionMenu: React.FC = () => {
-    const { selectedIds, walls, anchors, updateWall, removeWall, removeAnchor, setSelection, alignAnchors, theme } = useProjectStore();
+    const { selectedIds, walls, anchors, hubs, updateWall, removeWall, removeAnchor, setSelection, alignAnchors, theme } = useProjectStore();
 
     const isDark = theme === 'dark';
 
@@ -35,8 +35,9 @@ export const SelectionMenu: React.FC = () => {
     // Filter to see what kind of objects are selected
     const selectedWalls = walls.filter(w => selectedIds.includes(w.id));
     const selectedAnchors = anchors.filter(a => selectedIds.includes(a.id));
+    const selectedHubs = hubs.filter(h => selectedIds.includes(h.id));
 
-    const hasSelection = selectedWalls.length > 0 || selectedAnchors.length > 0;
+    const hasSelection = selectedWalls.length > 0 || selectedAnchors.length > 0 || selectedHubs.length > 0;
     if (!hasSelection) return null;
 
     return (
@@ -256,6 +257,52 @@ export const SelectionMenu: React.FC = () => {
                                 </div>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+            {/* --- HUBS SECTION --- */}
+            {selectedHubs.length > 0 && (
+                <div className="mb-0">
+                    {/* Add divider if walls or anchors were also present */}
+                    {(selectedWalls.length > 0 || selectedAnchors.length > 0) && <div className={`border-t ${dividerClass} my-3`}></div>}
+
+                    <div className={`flex justify-between items-center mb-2 pb-2 border-b ${dividerClass}`}>
+                        <h3 className={`text-xs font-bold uppercase ${headerTextClass}`}>
+                            {selectedHubs.length} Hub{selectedHubs.length > 1 ? 's' : ''} Selected
+                        </h3>
+                        <button
+                            onClick={() => {
+                                selectedHubs.forEach(h => useProjectStore.getState().removeHub(h.id));
+                                setSelection(selectedIds.filter(id => !selectedHubs.some(h => h.id === id)));
+                            }}
+                            className="text-red-400 hover:text-red-300 text-xs"
+                        >
+                            Delete
+                        </button>
+                    </div>
+
+                    <div className="space-y-3">
+                        <div className="flex flex-col space-y-1">
+                            <label className={`text-[10px] ${subTextClass} uppercase`}>Capacity</label>
+                            <div className="flex space-x-1">
+                                {[2, 6, 12, 24].map((cap) => (
+                                    <button
+                                        key={cap}
+                                        onClick={() => {
+                                            selectedHubs.forEach(h => useProjectStore.getState().updateHub(h.id, { capacity: cap as any }));
+                                        }}
+                                        className={`flex-1 py-1 rounded text-[10px] transition-colors
+                                            ${selectedHubs.every(h => h.capacity === cap)
+                                                ? 'bg-blue-500 text-white'
+                                                : buttonBgClass
+                                            }
+                                        `}
+                                    >
+                                        {cap}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

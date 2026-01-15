@@ -1,8 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
 import Konva from 'konva';
+import { v4 as uuidv4 } from 'uuid';
 import { Line, Circle, Rect } from 'react-konva';
 import { useProjectStore } from '../../store/useProjectStore';
 import { applyOrthogonal, getSnapPoint, dist } from '../../utils/geometry';
+// import type { Anchor, Wall, Hub } from '../../types';
+import { getOrthogonalPath } from '../../utils/routing';
 import type { Point } from '../../utils/geometry';
 
 interface InteractionLayerProps {
@@ -115,7 +118,7 @@ const THEME_COLORS = {
 };
 
 export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpenMenu, onOpenScaleModal }) => {
-    const { activeTool, addWall, addWalls, addAnchor, setTool, walls, anchors, setSelection, wallPreset, standardWallThickness, thickWallThickness, wideWallThickness, setAnchorMode, removeWall, removeAnchor, updateAnchors, removeDimension, dimensions, anchorRadius, theme, setExportRegion, exportRegion } = useProjectStore();
+    const { activeTool, addWall, addWalls, addAnchor, addHub, activeHubCapacity, setTool, walls, anchors, setSelection, wallPreset, standardWallThickness, thickWallThickness, wideWallThickness, setAnchorMode, removeWall, removeAnchor, updateAnchors, removeDimension, dimensions, anchorRadius, theme, setExportRegion, exportRegion } = useProjectStore();
 
     const colors = THEME_COLORS[theme || 'dark'] || THEME_COLORS.dark;
 
@@ -146,6 +149,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
     const dragAnchorId = useRef<string | null>(null);
     // Dimension Line Drag State (Ref)
     const dragDimLineId = useRef<string | null>(null);
+    const dragHubId = useRef<string | null>(null);
 
 
 
@@ -291,6 +295,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                             state.removeWall(id);
                             state.removeAnchor(id);
                             state.removeDimension(id);
+                            state.removeHub(id);
                         });
                         setSelection([]);
                     }
@@ -440,6 +445,30 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             }
         }
 
+
+        // Hub Drag Check
+        const scale = stage?.scaleX() || 1;
+        const hubs = useProjectStore.getState().hubs;
+        const hitHub = hubs.find(h =>
+            Math.abs(pos.x - h.x) < 15 / scale &&
+            Math.abs(pos.y - h.y) < 15 / scale
+        );
+
+        if (hitHub) {
+            if (activeTool === 'select' || activeTool === 'hub') {
+                dragHubId.current = hitHub.id;
+                lastDragPos.current = pos;
+                useProjectStore.temporal.getState().pause();
+
+                // Auto-select if not selected
+                const isSelected = useProjectStore.getState().selectedIds.includes(hitHub.id);
+                if (!isSelected && !e.evt.shiftKey) {
+                    setSelection([hitHub.id]);
+                }
+                return;
+            }
+        }
+
         // Anchor Drag Check
         if (e.target.name() === 'anchor') {
             const anchorId = e.target.id();
@@ -580,6 +609,22 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                         { label: 'Delete', action: () => targetIds.forEach(id => state.removeWall(id)) }
                     ]);
                     return; // Stop Panning
+                }
+            }
+
+            // Hub Context Menu
+            const hubs = state.hubs;
+            const hitHub = hubs.find(h =>
+                Math.abs(pos.x - h.x) < 15 / (stage?.scaleX() || 1) &&
+                Math.abs(pos.y - h.y) < 15 / (stage?.scaleX() || 1)
+            );
+            if (hitHub) {
+                if (onOpenMenu) {
+                    onOpenMenu(e.evt.clientX, e.evt.clientY, [
+                        { label: 'Delete Hub', action: () => state.removeHub(hitHub.id) },
+                        { label: 'Properties...', action: () => alert(`Hub: ${hitHub.capacity} ports`) }
+                    ]);
+                    return;
                 }
             }
 
@@ -803,6 +848,18 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                 });
             }
 
+            // Hub Tool
+        } else if (activeTool === 'hub') {
+            if (e.evt.button === 0) {
+                addHub({
+                    id: uuidv4(),
+                    x: pos.x,
+                    y: pos.y,
+                    capacity: activeHubCapacity || 12,
+                    name: ''
+                });
+            }
+
             // Select Tool
         } else if (activeTool === 'select') {
             if (e.evt.button === 0) {
@@ -969,6 +1026,62 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             return;
         }
 
+        // Drag Hub
+        if (dragHubId.current && lastDragPos.current) {
+            const dx = pos.x - lastDragPos.current.x;
+            const dy = pos.y - lastDragPos.current.y;
+            const state = useProjectStore.getState();
+
+            const isDragSelected = state.selectedIds.includes(dragHubId.current);
+            if (isDragSelected) {
+                state.hubs.forEach(h => {
+                    if (state.selectedIds.includes(h.id)) {
+                        state.updateHub(h.id, { x: h.x + dx, y: h.y + dy });
+                    }
+                });
+            } else {
+                const hub = state.hubs.find(h => h.id === dragHubId.current);
+                if (hub) state.updateHub(hub.id, { x: hub.x + dx, y: hub.y + dy });
+            }
+
+            // Auto Update Cables if "Connect" was active?
+            // For now, cables are static until "Connect" is pressed again OR we update them live.
+            // Requirement: "Dragging Hubs ... updates connected cables dynamically".
+            // Implementation: We need to re-route cables connected to this hub.
+            // Since we use orthogonal routing, we just need to update the points.
+
+            // Allow batch update of cables
+            const cablesToUpdate = state.cables.filter(c =>
+                c.fromId === dragHubId.current ||
+                (isDragSelected && state.selectedIds.includes(c.fromId))
+            );
+
+            if (cablesToUpdate.length > 0) {
+                // Import the smart router logic dynamically or duplicate simply but with walls
+                // Since we need valid walls, getting them from state is easy.
+                const walls = state.walls;
+
+                const newCables = cablesToUpdate.map(c => {
+                    const hub = state.hubs.find(h => h.id === c.fromId);
+                    const anchor = state.anchors.find(a => a.id === c.toId);
+                    if (hub && anchor) {
+                        const points = getOrthogonalPath({ x: hub.x, y: hub.y }, { x: anchor.x, y: anchor.y }, walls);
+                        return { ...c, points };
+                    }
+                    return c;
+                });
+
+                // Batch update cables not supported by default actions, but we can set specific cable
+                // Better: create a partial update capability or just loop
+                newCables.forEach(c => {
+                    state.updateCable(c.id, { points: c.points });
+                });
+            }
+
+            lastDragPos.current = pos;
+            return;
+        }
+
         // Tool Mouse Move checks...
         if (activeTool === 'wall' || activeTool === 'wall_rect' || activeTool === 'wall_rect_edge' || activeTool === 'dimension') {
             const state = useProjectStore.getState();
@@ -998,517 +1111,399 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
     };
 
     const handleMouseUp = (e: Konva.KonvaEventObject<MouseEvent>) => {
-        isMouseDown.current = false;
-        setIsPanning(false);
+        try {
+            isMouseDown.current = false;
+            setIsPanning(false);
 
-        // Resume History if we were dragging
-        if (dragTextId.current || dragAnchorId.current || dragDimLineId.current) {
-            useProjectStore.temporal.getState().resume();
+            // Resume History if we were dragging
+            if (dragTextId.current || dragAnchorId.current || dragDimLineId.current) {
+                useProjectStore.temporal.getState().resume();
 
-            // FORCE COMMIT: Trigger a state update to save the "End" position in history
-            // This is needed because changes made while paused are not "pushed" to the stack automatically on resume.
+                // FORCE COMMIT: Trigger a state update to save the "End" position in history
+                if (dragAnchorId.current) {
+                    const state = useProjectStore.getState();
+                    const updates = state.anchors
+                        .filter(a => state.selectedIds.includes(a.id))
+                        .map(a => ({ id: a.id, updates: { x: a.x, y: a.y } }));
+                    updateAnchors(updates);
+                }
 
-            if (dragAnchorId.current) {
-                const state = useProjectStore.getState();
-                const updates = state.anchors
-                    .filter(a => state.selectedIds.includes(a.id))
-                    .map(a => ({ id: a.id, updates: { x: a.x, y: a.y } }));
-                updateAnchors(updates);
+                if (dragDimLineId.current) {
+                    const d = useProjectStore.getState().dimensions.find(x => x.id === dragDimLineId.current);
+                    if (d) useProjectStore.getState().updateDimension(d.id, { points: [...d.points] });
+                }
+
+                if (dragTextId.current) {
+                    const d = useProjectStore.getState().dimensions.find(x => x.id === dragTextId.current);
+                    if (d) useProjectStore.getState().updateDimension(d.id, { textOffset: { x: d.textOffset?.x || 0, y: d.textOffset?.y || 0 } });
+                }
             }
 
-            if (dragDimLineId.current) {
-                const d = useProjectStore.getState().dimensions.find(x => x.id === dragDimLineId.current);
-                if (d) useProjectStore.getState().updateDimension(d.id, { points: [...d.points] });
-            }
+            dragTextId.current = null;
+            dragAnchorId.current = null;
+            dragHubId.current = null;
+            dragDimLineId.current = null;
+            lastDragPos.current = null;
 
-            if (dragTextId.current) {
-                const d = useProjectStore.getState().dimensions.find(x => x.id === dragTextId.current);
-                if (d) useProjectStore.getState().updateDimension(d.id, { textOffset: { x: d.textOffset?.x || 0, y: d.textOffset?.y || 0 } });
-            }
-        }
+            if (activeTool === 'dimension' && points.length === 1) {
+                const stagePos = stage?.getPointerPosition();
+                if (!stagePos) return;
+                const pos = getStagePoint();
+                if (!pos) return;
 
-        dragTextId.current = null;
-        dragAnchorId.current = null;
-        dragDimLineId.current = null;
-        lastDragPos.current = null;
+                const start = points[0];
+                const distMoved = dist(start, pos);
+                const clickTol = 5 / (stage?.scaleX() || 1);
 
-        if (activeTool === 'dimension' && points.length === 1) {
-            const stagePos = stage?.getPointerPosition();
-            if (!stagePos) return;
-            const pos = getStagePoint();
-            if (!pos) return;
+                if (distMoved < clickTol) {
+                    const clickPos = pos;
+                    const tol = 10 / (stage?.scaleX() || 1);
+                    let hitWall = null;
+                    const state = useProjectStore.getState();
 
-            const start = points[0];
-            const distMoved = dist(start, pos);
-
-            // If moved very little (< 5px), treat as CLICK (Auto Wall Dim)
-            const clickTol = 5 / (stage?.scaleX() || 1);
-
-            if (distMoved < clickTol) {
-                // Check logic for Wall Dim
-                const clickPos = pos;
-                const tol = 10 / (stage?.scaleX() || 1);
-                let hitWall = null;
-                const state = useProjectStore.getState();
-
-                if (state.layers.walls) {
-                    for (const w of walls) {
-                        if (isPointNearWall(clickPos, w, tol)) {
-                            hitWall = w;
-                            break;
+                    if (state.layers.walls) {
+                        for (const w of walls) {
+                            if (isPointNearWall(clickPos, w, tol)) {
+                                hitWall = w;
+                                break;
+                            }
                         }
                     }
-                }
 
-                if (hitWall) {
-                    // Found wall on CLICK -> Auto Dim
-                    // Create Wall Dimension
-                    const x1 = hitWall.points[0];
-                    const y1 = hitWall.points[1];
-                    const x2 = hitWall.points[2];
-                    const y2 = hitWall.points[3];
-                    const dx = x2 - x1;
-                    const dy = y2 - y1;
-                    const len = Math.hypot(dx, dy);
-                    const nx = -dy / len;
-                    const ny = dx / len;
-                    const offset = 30 / ((stage?.scaleX() || 1) || 1);
+                    if (hitWall) {
+                        const x1 = hitWall.points[0];
+                        const y1 = hitWall.points[1];
+                        const x2 = hitWall.points[2];
+                        const y2 = hitWall.points[3];
+                        const dx = x2 - x1;
+                        const dy = y2 - y1;
+                        const len = Math.hypot(dx, dy);
+                        const nx = -dy / len;
+                        const ny = dx / len;
+                        const offset = 30 / ((stage?.scaleX() || 1) || 1);
 
-                    const cx = clickPos.x - x1;
-                    const cy = clickPos.y - y1;
-                    const dot = cx * nx + cy * ny;
-                    const dir = dot > 0 ? 1 : -1;
+                        const cx = clickPos.x - x1;
+                        const cy = clickPos.y - y1;
+                        const dot = cx * nx + cy * ny;
+                        const dir = dot > 0 ? 1 : -1;
 
-                    const offX = nx * offset * dir;
-                    const offY = ny * offset * dir;
+                        const offX = nx * offset * dir;
+                        const offY = ny * offset * dir;
 
-                    const dimX1 = x1 + offX;
-                    const dimY1 = y1 + offY;
-                    const dimX2 = x2 + offX;
-                    const dimY2 = y2 + offY;
+                        const dimX1 = x1 + offX;
+                        const dimY1 = y1 + offY;
+                        const dimX2 = x2 + offX;
+                        const dimY2 = y2 + offY;
 
-                    // Scale check
-                    const scaleRatio = useProjectStore.getState().scaleRatio;
-                    const distMeters = len / scaleRatio;
+                        const scaleRatio = useProjectStore.getState().scaleRatio;
+                        const distMeters = len / scaleRatio;
 
-                    useProjectStore.getState().addDimension({
-                        points: [dimX1, dimY1, dimX2, dimY2],
-                        type: 'wall',
-                        label: `${distMeters.toFixed(2)}m`
-                    });
+                        useProjectStore.getState().addDimension({
+                            points: [dimX1, dimY1, dimX2, dimY2],
+                            type: 'wall',
+                            label: `${distMeters.toFixed(2)}m`
+                        });
 
-                    // Reset points (cancel the free dim start)
-                    setPoints([]);
+                        setPoints([]);
+                    }
                 } else {
-                    // Clicked empty space? 
-                    // Treat as valid point 1, wait for click 2.
-                    // Do nothing, points[0] stays.
+                    const state = useProjectStore.getState();
+                    const snap = (state.layers.walls || state.layers.anchors) ? getSnapPoint(pos, walls, anchors, 20 / (stage?.scaleX() || 1)) : null;
+                    const end = snap ? snap.point : pos;
+                    const distPx = Math.hypot(end.x - start.x, end.y - start.y);
+                    const scaleRatio = useProjectStore.getState().scaleRatio;
+                    const validDist = distPx / scaleRatio;
+
+                    if (validDist > 0) {
+                        useProjectStore.getState().addDimension({
+                            points: [start.x, start.y, end.x, end.y],
+                            type: 'free',
+                            label: `${validDist.toFixed(2)}m`
+                        });
+                    }
+                    setPoints([]);
                 }
-            } else {
-                // Drags (> clickTol)
-                // If we dragged and released, we should FINISH the dim (Drag-to-Measure behavior)
-                // "Click and pressing without release" -> Drag behavior.
-                // On Release:
+            }
+
+            if (e.evt.button === 0) {
+                const pos = getStagePoint();
+                if (!pos) return;
+
+                let finalPos = pos;
+                let snap: import('../../utils/geometry').SnapResult | null = null;
                 const state = useProjectStore.getState();
-                const snap = (state.layers.walls || state.layers.anchors) ? getSnapPoint(pos, walls, anchors, 20 / (stage?.scaleX() || 1)) : null;
-                const end = snap ? snap.point : pos;
-                const distPx = Math.hypot(end.x - start.x, end.y - start.y);
-                const scaleRatio = useProjectStore.getState().scaleRatio;
-                const validDist = distPx / scaleRatio;
-
-                if (validDist > 0) {
-                    useProjectStore.getState().addDimension({
-                        points: [start.x, start.y, end.x, end.y],
-                        type: 'free',
-                        label: `${validDist.toFixed(2)}m`
-                    });
+                if ((activeTool === 'wall_rect' || activeTool === 'wall_rect_edge') && state.layers.walls) {
+                    snap = getSnapPoint(pos, walls, anchors, 20 / ((stage?.scaleX() || 1)));
+                    if (snap) finalPos = snap.point;
                 }
-                setPoints([]);
-            }
-        }
-        // Handle Drag-to-Release for Rect Tools
-        if (e.evt.button === 0) {
-            const pos = getStagePoint(); // Raw pos
-            if (!pos) return;
 
-            // Snap for MouseUp
-            let finalPos = pos;
-            let snap: import('../../utils/geometry').SnapResult | null = null;
-            const state = useProjectStore.getState();
-            if ((activeTool === 'wall_rect' || activeTool === 'wall_rect_edge') && state.layers.walls) {
-                snap = getSnapPoint(pos, walls, anchors, 20 / ((stage?.scaleX() || 1)));
-                if (snap) finalPos = snap.point;
-            }
+                if (activeTool === 'wall_rect') {
+                    if (rectStart) {
+                        if (dist(rectStart, finalPos) > 0.2) {
+                            const x1 = rectStart.x;
+                            const y1 = rectStart.y;
+                            const x2 = finalPos.x;
+                            const y2 = finalPos.y;
 
-            if (activeTool === 'wall_rect') {
-                if (rectStart) {
-                    // If we dragged far enough, treat MouseUp as the end click
-                    if (dist(rectStart, finalPos) > 0.2) { // 20cm threshold to distinguish click vs drag
-                        const x1 = rectStart.x;
-                        const y1 = rectStart.y;
-                        const x2 = finalPos.x;
-                        const y2 = finalPos.y;
+                            if (Math.abs(x1 - x2) > 0.1 || Math.abs(y1 - y2) > 0.1) {
+                                if (snap && snap.type === 'edge' && snap.id) {
+                                    state.splitWall(snap.id, snap.point);
+                                }
+                                const p3 = { x: x2, y: y1 };
+                                const p4 = { x: x1, y: y2 };
 
-                        if (Math.abs(x1 - x2) > 0.1 || Math.abs(y1 - y2) > 0.1) {
-                            // Auto-Split for End Point
-                            if (snap && snap.type === 'edge' && snap.id) {
-                                state.splitWall(snap.id, snap.point);
+                                const snapP3 = state.layers.walls ? getSnapPoint(p3, walls, anchors, 20 / ((stage?.scaleX() || 1))) : null;
+                                if (snapP3 && snapP3.type === 'edge' && snapP3.id) state.splitWall(snapP3.id, snapP3.point);
+
+                                const snapP4 = state.layers.walls ? getSnapPoint(p4, walls, anchors, 20 / ((stage?.scaleX() || 1))) : null;
+                                if (snapP4 && snapP4.type === 'edge' && snapP4.id) state.splitWall(snapP4.id, snapP4.point);
+
+                                const params = getWallParams(wallPreset, standardWallThickness, thickWallThickness, wideWallThickness);
+                                addWalls([
+                                    { points: [x1, y1, x2, y1], ...params as any },
+                                    { points: [x2, y1, x2, y2], ...params as any },
+                                    { points: [x2, y2, x1, y2], ...params as any },
+                                    { points: [x1, y2, x1, y1], ...params as any }
+                                ]);
                             }
+                            setRectStart(null);
+                            setCurrentMousePos(null);
+                        }
+                    }
+                } else if (activeTool === 'wall_rect_edge') {
+                    if (rectEdgeBaseEnd) {
+                        if (dist(rectEdgeBaseEnd, finalPos) > 0.2) {
+                            const p1 = rectEdgeStart;
+                            if (!p1) return;
+                            const p2 = rectEdgeBaseEnd;
 
-                            // Check Implicit Points (p3, p4) for Splitting
-                            const p3 = { x: x2, y: y1 };
-                            const p4 = { x: x1, y: y2 };
+                            const dx = p2.x - p1.x;
+                            const dy = p2.y - p1.y;
+                            const len = Math.hypot(dx, dy);
 
+                            const nx = -dy / len;
+                            const ny = dx / len;
+
+                            const vmx = finalPos.x - p1.x;
+                            const vmy = finalPos.y - p1.y;
+                            const h = vmx * nx + vmy * ny;
+
+                            const p4x = p1.x + nx * h;
+                            const p4y = p1.y + ny * h;
+                            const p3x = p2.x + nx * h;
+                            const p3y = p2.y + ny * h;
+
+                            if (snap && snap.type === 'edge' && snap.id) state.splitWall(snap.id, snap.point);
+
+                            const p3 = { x: p3x, y: p3y };
+                            const p4 = { x: p4x, y: p4y };
                             const snapP3 = state.layers.walls ? getSnapPoint(p3, walls, anchors, 20 / ((stage?.scaleX() || 1))) : null;
                             if (snapP3 && snapP3.type === 'edge' && snapP3.id) state.splitWall(snapP3.id, snapP3.point);
-
                             const snapP4 = state.layers.walls ? getSnapPoint(p4, walls, anchors, 20 / ((stage?.scaleX() || 1))) : null;
                             if (snapP4 && snapP4.type === 'edge' && snapP4.id) state.splitWall(snapP4.id, snapP4.point);
 
                             const params = getWallParams(wallPreset, standardWallThickness, thickWallThickness, wideWallThickness);
+
                             addWalls([
-                                { points: [x1, y1, x2, y1], ...params as any },
-                                { points: [x2, y1, x2, y2], ...params as any },
-                                { points: [x2, y2, x1, y2], ...params as any },
-                                { points: [x1, y2, x1, y1], ...params as any }
+                                { points: [p1.x, p1.y, p2.x, p2.y], ...params as any },
+                                { points: [p2.x, p2.y, p3x, p3y], ...params as any },
+                                { points: [p3x, p3y, p4x, p4y], ...params as any },
+                                { points: [p4x, p4y, p1.x, p1.y], ...params as any }
                             ]);
+
+                            setRectEdgeStart(null);
+                            setRectEdgeBaseEnd(null);
+                            setCurrentMousePos(null);
                         }
-                        setRectStart(null);
-                        setCurrentMousePos(null);
-                    }
-                }
-            } else if (activeTool === 'wall_rect_edge') {
-                if (rectEdgeBaseEnd) {
-                    // Phase 3: Height (Drag Release)
-                    if (dist(rectEdgeBaseEnd, finalPos) > 0.2) {
-                        const p1 = rectEdgeStart;
-                        if (!p1) return;
-                        const p2 = rectEdgeBaseEnd;
-
-                        const dx = p2.x - p1.x;
-                        const dy = p2.y - p1.y;
-                        const len = Math.hypot(dx, dy);
-
-                        const nx = -dy / len;
-                        const ny = dx / len;
-
-                        const vmx = finalPos.x - p1.x;
-                        const vmy = finalPos.y - p1.y;
-                        const h = vmx * nx + vmy * ny;
-
-                        const p4x = p1.x + nx * h;
-                        const p4y = p1.y + ny * h;
-                        const p3x = p2.x + nx * h;
-                        const p3y = p2.y + ny * h;
-
-                        // Check Splitting for all 4 corners
-                        if (snap && snap.type === 'edge' && snap.id) state.splitWall(snap.id, snap.point);
-
-                        const p3 = { x: p3x, y: p3y };
-                        const p4 = { x: p4x, y: p4y };
-                        const snapP3 = state.layers.walls ? getSnapPoint(p3, walls, anchors, 20 / ((stage?.scaleX() || 1))) : null;
-                        if (snapP3 && snapP3.type === 'edge' && snapP3.id) state.splitWall(snapP3.id, snapP3.point);
-                        const snapP4 = state.layers.walls ? getSnapPoint(p4, walls, anchors, 20 / ((stage?.scaleX() || 1))) : null;
-                        if (snapP4 && snapP4.type === 'edge' && snapP4.id) state.splitWall(snapP4.id, snapP4.point);
-
-                        // Note: P1 and P2 splits were handled in previous steps/clicks, but could re-check if dragged? 
-                        // P1 was set at start. P2 set at Phase 2. Height drag only changes P3/P4.
-                        // But wait, the MouseUp here is defining the final pos. 
-                        // If snap is valid, it's splitting at the *mouse* position, which is on the P3-P4 line.
-                        // Actually, finalPos is strictly the mouse. The P3/P4 are projected.
-                        // So snap.point might not be exactly P3 or P4 if we project.
-                        // Nevermind, for now let's apply standard logic.
-
-                        const params = getWallParams(wallPreset, standardWallThickness, thickWallThickness, wideWallThickness);
-
-                        addWalls([
-                            { points: [p1.x, p1.y, p2.x, p2.y], ...params as any },
-                            { points: [p2.x, p2.y, p3x, p3y], ...params as any },
-                            { points: [p3x, p3y, p4x, p4y], ...params as any },
-                            { points: [p4x, p4y, p1.x, p1.y], ...params as any }
-                        ]);
-
-                        setRectEdgeStart(null);
-                        setRectEdgeBaseEnd(null);
-                        setCurrentMousePos(null);
                     }
                 }
             }
-        }
 
-        if (e.evt.button === 2) {
-            if (isPanning) {
-                setIsPanning(false);
-                // Check if it was a CLICK (short distance pan)
-                checkRMBClick(e);
-                lastPanPos.current = null;
+            if (e.evt.button === 2) {
+                if (isPanning) {
+                    setIsPanning(false);
+                    checkRMBClick(e);
+                    lastPanPos.current = null;
+                }
             }
-        }
 
-        if (e.evt.button === 0 && activeTool === 'select') {
-            const hasDragRect = selectionRect && (selectionRect.width > 0.5 || selectionRect.height > 0.5);
+            if (e.evt.button === 0 && activeTool === 'select') {
+                const hasDragRect = selectionRect && (selectionRect.width > 0.5 || selectionRect.height > 0.5);
 
-            const getIdsInRect = (rect: { minX: number, maxX: number, minY: number, maxY: number }, isCrossing: boolean): string[] => {
-                const foundIds: string[] = [];
-                const state = useProjectStore.getState();
+                const getIdsInRect = (rect: { minX: number, maxX: number, minY: number, maxY: number }, isCrossing: boolean): string[] => {
+                    const foundIds: string[] = [];
+                    const state = useProjectStore.getState();
+                    const { walls, anchors, hubs, dimensions } = state;
 
-                // Check Walls
-                if (state.layers.walls) {
-                    walls.forEach(w => {
-                        const wx1 = w.points[0]; const wy1 = w.points[1];
-                        const wx2 = w.points[2]; const wy2 = w.points[3];
-                        const wMinX = Math.min(wx1, wx2); const wMaxX = Math.max(wx1, wx2);
-                        const wMinY = Math.min(wy1, wy2); const wMaxY = Math.max(wy1, wy2);
-
-                        const isEnclosed = wMinX >= rect.minX && wMaxX <= rect.maxX &&
-                            wMinY >= rect.minY && wMaxY <= rect.maxY;
-
-                        if (!isCrossing) {
-                            if (isEnclosed) foundIds.push(w.id);
-                        } else {
-                            if (wMaxX < rect.minX || wMinX > rect.maxX || wMaxY < rect.minY || wMinY > rect.maxY) return;
-                            foundIds.push(w.id);
-                        }
-                    });
-                }
-
-                // Check Dimensions
-                if (state.layers.dimensions) {
-                    dimensions.forEach(d => {
-                        const dx1 = d.points[0]; const dy1 = d.points[1];
-                        const dx2 = d.points[2]; const dy2 = d.points[3];
-                        const dMinX = Math.min(dx1, dx2); const dMaxX = Math.max(dx1, dx2);
-                        const dMinY = Math.min(dy1, dy2); const dMaxY = Math.max(dy1, dy2);
-
-                        const isEnclosed = dMinX >= rect.minX && dMaxX <= rect.maxX &&
-                            dMinY >= rect.minY && dMaxY <= rect.maxY;
-
-                        if (!isCrossing) {
-                            if (isEnclosed) foundIds.push(d.id);
-                        } else {
-                            if (dMaxX < rect.minX || dMinX > rect.maxX || dMaxY < rect.minY || dMinY > rect.maxY) return;
-                            foundIds.push(d.id);
-                        }
-                    });
-                }
-
-                // Check Anchors (Point check)
-                if (state.layers.anchors) {
-                    anchors.forEach(a => {
-                        const ax = a.x;
-                        const ay = a.y;
-                        // Treat anchor as small point/box
-                        const isEnclosed = ax >= rect.minX && ax <= rect.maxX &&
-                            ay >= rect.minY && ay <= rect.maxY;
-
-                        if (isEnclosed) {
-                            foundIds.push(a.id);
-                        }
-                    });
-                }
-
-
-
-
-
-                if (e.evt.altKey) {
-                    state.importedObjects.forEach(obj => {
-                        if (!obj.visible || obj.locked) return;
-
-                        // We need width/height. If not present (legacy DXF), we skip or treat as point?
-                        // Images have width/height.
-                        const w = (obj.width || 0) * obj.scale;
-                        const h = (obj.height || 0) * obj.scale;
-
-                        if (w <= 0 || h <= 0) return;
-
-                        const objMinX = obj.x;
-                        const objMaxX = obj.x + w;
-                        const objMinY = obj.y;
-                        const objMaxY = obj.y + h;
-
-                        if (!isCrossing) {
-                            // Enclosed (Window Select)
-                            const isEnclosed = objMinX >= rect.minX && objMaxX <= rect.maxX &&
-                                objMinY >= rect.minY && objMaxY <= rect.maxY;
-                            if (isEnclosed) {
-                                // We don't have multi-select for imports yet effectively in UI (only activeImportId).
-                                // But we can set the LAST found one as active?
-                                // Or if multiple found?
-                                // Store only supports one activeImportId.
-                                // So we pick the first or last one.
-                                // Let's modify logic: if found, set activeImportId.
-                                // But this function returns IDs for main selection (walls/anchors).
-                                // Imports are separate state.
-                                // We should handle imports separately outside this loop or mix them?
-                                // Current requirement: "dxf will be selected"
-                                // Let's add a side effect or return it.
-                                state.setActiveImportId(obj.id);
-                                // NOTE: This sets it immediately during loop. 
-                                // If multiple, last one wins. This works for now.
+                    if (state.layers.walls) {
+                        walls.forEach(w => {
+                            const wx1 = w.points[0]; const wy1 = w.points[1];
+                            const wx2 = w.points[2]; const wy2 = w.points[3];
+                            const wMinX = Math.min(wx1, wx2); const wMaxX = Math.max(wx1, wx2);
+                            const wMinY = Math.min(wy1, wy2); const wMaxY = Math.max(wy1, wy2);
+                            const isEnclosed = wMinX >= rect.minX && wMaxX <= rect.maxX && wMinY >= rect.minY && wMaxY <= rect.maxY;
+                            if (!isCrossing) {
+                                if (isEnclosed) foundIds.push(w.id);
+                            } else {
+                                if (wMaxX < rect.minX || wMinX > rect.maxX || wMaxY < rect.minY || wMinY > rect.maxY) return;
+                                foundIds.push(w.id);
                             }
-                        } else {
-                            // Crossing (Crossing Select)
-                            // AABB Intersection
-                            if (objMaxX < rect.minX || objMinX > rect.maxX || objMaxY < rect.minY || objMinY > rect.maxY) return;
-                            state.setActiveImportId(obj.id);
-                        }
-                    });
-                }
+                        });
+                    }
 
-                return foundIds;
-            };
+                    if (state.layers.dimensions) {
+                        dimensions.forEach(d => {
+                            const dx1 = d.points[0]; const dy1 = d.points[1];
+                            const dx2 = d.points[2]; const dy2 = d.points[3];
+                            const dMinX = Math.min(dx1, dx2); const dMaxX = Math.max(dx1, dx2);
+                            const dMinY = Math.min(dy1, dy2); const dMaxY = Math.max(dy1, dy2);
+                            const isEnclosed = dMinX >= rect.minX && dMaxX <= rect.maxX && dMinY >= rect.minY && dMaxY <= rect.maxY;
+                            if (!isCrossing) {
+                                if (isEnclosed) foundIds.push(d.id);
+                            } else {
+                                if (dMaxX < rect.minX || dMinX > rect.maxX || dMaxY < rect.minY || dMinY > rect.maxY) return;
+                                foundIds.push(d.id);
+                            }
+                        });
+                    }
 
-            if (hasDragRect && selectionStart && currentMousePos && selectionRect) {
-                // Box Select
-                const isCrossing = currentMousePos.x < selectionStart.x;
-                const rect = {
-                    minX: Math.min(selectionStart.x, currentMousePos.x),
-                    maxX: Math.max(selectionStart.x, currentMousePos.x),
-                    minY: Math.min(selectionStart.y, currentMousePos.y),
-                    maxY: Math.max(selectionStart.y, currentMousePos.y)
+                    if (state.layers.anchors) {
+                        anchors.forEach(a => {
+                            const isEnclosed = a.x >= rect.minX && a.x <= rect.maxX && a.y >= rect.minY && a.y <= rect.maxY;
+                            if (isEnclosed) foundIds.push(a.id);
+                        });
+                    }
+
+                    if (state.layers.hubs) {
+                        hubs.forEach(h => {
+                            const isEnclosed = h.x >= rect.minX && h.x <= rect.maxX && h.y >= rect.minY && h.y <= rect.maxY;
+                            if (isEnclosed) foundIds.push(h.id);
+                        });
+                    }
+
+                    if (e.evt.altKey) {
+                        state.importedObjects?.forEach(obj => {
+                            if (!obj.visible || obj.locked) return;
+                            const w = (obj.width || 0) * obj.scale;
+                            const h = (obj.height || 0) * obj.scale;
+                            if (w <= 0 || h <= 0) return;
+                            const objMinX = obj.x;
+                            const objMaxX = obj.x + w;
+                            const objMinY = obj.y;
+                            const objMaxY = obj.y + h;
+
+                            if (!isCrossing) {
+                                const isEnclosed = objMinX >= rect.minX && objMaxX <= rect.maxX && objMinY >= rect.minY && objMaxY <= rect.maxY;
+                                if (isEnclosed) state.setActiveImportId(obj.id);
+                            } else {
+                                if (objMaxX < rect.minX || objMinX > rect.maxX || objMaxY < rect.minY || objMinY > rect.maxY) return;
+                                state.setActiveImportId(obj.id);
+                            }
+                        });
+                    }
+                    return foundIds;
                 };
 
-                const foundIds = getIdsInRect(rect, isCrossing);
-                setSelection(foundIds);
+                if (hasDragRect && selectionStart && currentMousePos && selectionRect) {
+                    const isCrossing = currentMousePos.x < selectionStart.x;
+                    const rect = {
+                        minX: Math.min(selectionStart.x, currentMousePos.x),
+                        maxX: Math.max(selectionStart.x, currentMousePos.x),
+                        minY: Math.min(selectionStart.y, currentMousePos.y),
+                        maxY: Math.max(selectionStart.y, currentMousePos.y)
+                    };
+                    const foundIds = getIdsInRect(rect, isCrossing);
+                    setSelection(foundIds);
 
-            } else if (selectionStart && !hasDragRect) {
-                // Single Click Logic
-                const clickPos = getStagePoint();
-                if (clickPos) {
-                    let idsToSelect: string[] = [];
-                    const tol = 10 / ((stage?.scaleX() || 1) || 1);
+                } else if (selectionStart && !hasDragRect) {
+                    const clickPos = getStagePoint();
+                    if (clickPos) {
+                        let idsToSelect: string[] = [];
+                        const tol = 10 / ((stage?.scaleX() || 1) || 1);
 
-                    // Check Direct Click on Text
-                    if (e.target.name() === 'dim-text') {
-                        const rawId = e.target.id();
-                        idsToSelect = [rawId.replace('dim-text-', '')];
-                    }
-
-                    // Check Dimensions Line if text not hit
-                    if (idsToSelect.length === 0 && useProjectStore.getState().layers.dimensions) {
-                        for (const d of dimensions) {
-                            if (isPointNearLine(clickPos, d.points[0], d.points[1], d.points[2], d.points[3], tol)) {
-                                idsToSelect = [d.id];
-                                break;
-                            }
+                        if (e.target.name() === 'dim-text') {
+                            const rawId = e.target.id();
+                            idsToSelect = [rawId.replace('dim-text-', '')];
                         }
-                    }
 
-                    // If no dim, check walls
-                    if (idsToSelect.length === 0 && useProjectStore.getState().layers.walls) {
-                        for (const w of walls) {
-                            if (isPointNearWall(clickPos, w, tol)) {
-                                // Found a wall! 
-                                // Ctrl+Click -> Select Chain
-                                // Simple Click -> Select Single
-                                if (e.evt.ctrlKey) {
-                                    idsToSelect = getAllConnectedWalls(w.id, walls);
-                                } else {
-                                    idsToSelect = [w.id];
+                        if (idsToSelect.length === 0 && useProjectStore.getState().layers.dimensions) {
+                            for (const d of dimensions) {
+                                if (isPointNearLine(clickPos, d.points[0], d.points[1], d.points[2], d.points[3], tol)) {
+                                    idsToSelect = [d.id];
+                                    break;
                                 }
-                                break;
                             }
                         }
-                    }
 
-                    // Check Anchors (if still nothing found?) 
-                    // Actually original logic didn't check anchors here??
-                    // Wait, previous code ended at check walls...
-                    // Let's verify if anchors were checked. 
-                    // Ah, line 1400 (context menu) checks anchors. InteractionLayer might rely on Anchor Object click bubbling?
-                    // Or maybe I missed anchor check in the viewing.
-                    // But let's stick to replacing what I see.
-                    // If logic was missing anchor check here, maybe anchors handle their own clicks?
-                    // "AnchorsLayer" renders Circle/Rect.
-                    // Usually they have onClick handlers?
-                    // Let's assume Anchors handle themselves OR this block is for "background" items.
-                    // I will preserve the logic I'm replacing (Dims & Walls).
+                        if (activeTool === 'select' || activeTool === 'hub') {
+                            const hubs = useProjectStore.getState().hubs;
+                            const stageScale = stage?.scaleX() || 1;
+                            const hubHit = hubs.find(h =>
+                                Math.abs(clickPos.x - h.x) < 15 / stageScale &&
+                                Math.abs(clickPos.y - h.y) < 15 / stageScale
+                            );
 
-                    // Wait, looking at lines 1250-1300 I viewed earlier, I didn't see Anchor check.
-                    // Maybe Anchors are handled separately?
-                    // But walls needed this manual check because `WallsLayer` has `listening={false}` on boundary?
-                    // Anchors usually have `listening={true}`.
-                    // So if I click an anchor, it might fire its own event?
-                    // But `InteractionLayer` covers everything?
-                    // `InteractionLayer` is a `Layer`. It is above or below?
-                    // Usually Interaction is TOP.
-                    // If it catches the event, it stops propagation?
-                    // `handleMouseUp` uses `e.target`.
-                    // If I click an anchor, `e.target` is the anchor.
-                    // But `isPointNearWall` uses geometry.
-
-                    // Let's just implement the logic for Dims and Walls as seen.
-
-                    if (idsToSelect.length > 0) {
-                        if (isShiftDown) {
-                            const current = useProjectStore.getState().selectedIds;
-                            // Add new ones that aren't already selected
-                            const newIds = idsToSelect.filter(id => !current.includes(id));
-                            // If all already selected, maybe deselect them?
-                            // Standard behavior: Toggle.
-                            // If I click a group, and ANY are new, add them.
-                            // If ALL are present, remove them?
-                            if (newIds.length > 0) {
-                                setSelection([...current, ...newIds]);
-                            } else {
-                                // All present, remove them
-                                setSelection(current.filter(id => !idsToSelect.includes(id)));
+                            if (hubHit) {
+                                const isSelected = useProjectStore.getState().selectedIds.includes(hubHit.id);
+                                if (!isShiftDown) {
+                                    if (!isSelected) setSelection([hubHit.id]);
+                                } else {
+                                    const current = useProjectStore.getState().selectedIds;
+                                    if (isSelected) setSelection(current.filter(id => id !== hubHit.id));
+                                    else setSelection([...current, hubHit.id]);
+                                }
+                                return;
                             }
+                        }
+
+                        if (idsToSelect.length === 0 && useProjectStore.getState().layers.walls) {
+                            for (const w of walls) {
+                                if (isPointNearWall(clickPos, w, tol)) {
+                                    if (e.evt.ctrlKey) {
+                                        idsToSelect = getAllConnectedWalls(w.id, walls);
+                                    } else {
+                                        idsToSelect = [w.id];
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+
+                        // NOTE: Anchors handle their own clicks, so we typically deselect if nothing found here.
+                        // UNLESS we want "Background Click" to deselect anchors too.
+                        const current = useProjectStore.getState().selectedIds;
+                        const newIds = idsToSelect.filter(id => !current.includes(id));
+
+                        if (newIds.length > 0) {
+                            setSelection([...current, ...newIds]);
                         } else {
-                            setSelection(idsToSelect);
-                        }
-                    } else {
-                        // If clicking on empty space (and not handled by other layers?):
-                        // But wait, if I click an Anchor, `e.target` would be the anchor.
-                        // This block runs if `activeTool === 'select'`.
-                        // If e.target is NOT the stage, maybe we shouldn't deselect?
-                        // But InteractionLayer is a transparent Rect?
-                        // If `e.target` is the InteractionLayer rect, then we clicked 'nothing'.
-                        // If `e.target` is an Anchor, we should respect it?
-                        // But my manual check didn't check anchors.
-                        // If I click an anchor, `idsToSelect` is empty.
-                        // Then I deselect.
-                        // THIS IS A BUG if anchors rely on bubbling.
-                        // If interaction layer covers them, bubbling doesn't reach them?
-                        // Or `InteractionLayer` IS the listener.
-
-                        // Let's check `e.target`.
-                        // If `e.target` has a specific name/id?
-                        // `handleMouseUp` is on `Stage`? No, `onMouseUp` on `Stage`.
-                        // So `e.target` works.
-                        // If `e.target` is an anchor, we should identify it.
-
-                        // BUT, I'll defer fixing "Anchor Selection" if it's not broken.
-                        // The existing code at 1280 deselected everything if no wall/dim found.
-                        // If anchors were working, they must be checked elsewhere or I missed the code.
-                        // Re-reading code around 1280...
-                        // `if (foundId) ... else { if (!isShiftDown) setSelection([]); }`
-                        // This implies clicking an anchor (if not detected here) would DESELECT everything.
-                        // So anchors MUST be detecting here OR `e.target` check handles them?
-
-                        // Wait, I see "Check Direct Click on Text".
-                        // Maybe anchors are checked too?
-                        // I'll assume they are handled by their own onClick handlers which might set selection?
-                        // But verify: Does `onClick` run before `onMouseUp` on Stage?
-                        // Konva event order...
-
-                        // Safe bet: Only deselect if we are sure we hit "nothing".
-                        // Simply changing `foundId` logic to `idsToSelect` usage keeps behavior same for walls/dims.
-                        // I will keep the `else { setSelection([]) }`.
-
-                        if (!isShiftDown) {
-                            setSelection([]);
-                            useProjectStore.getState().setActiveImportId(null);
+                            if (idsToSelect.length > 0) {
+                                // Clicked something already selected -> toggle off? or keep? 
+                                // Standard: if single click on selected without shift, usually selects ONLY that one.
+                                // But here we toggle off?
+                                setSelection(current.filter(id => !idsToSelect.includes(id)));
+                            } else {
+                                // Clicked Empty Space
+                                if (!isShiftDown) {
+                                    setSelection([]);
+                                    useProjectStore.getState().setActiveImportId(null);
+                                }
+                            }
                         }
                     }
                 }
             }
+
+        } catch (err) {
+            console.error("Error in handleMouseUp:", err);
+        } finally {
             setSelectionStart(null);
             setSelectionRect(null);
             setCurrentMousePos(null);
         }
     };
+
+
 
 
     const lastLoaded = useProjectStore(state => state.lastLoaded);
@@ -1689,11 +1684,23 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     targetIds = [anchorId];
                 }
                 openAnchorMenu(pointer, targetIds);
+            } else if (e.target.name() === 'hub-bg' || e.target.name() === 'hub-text') {
+                // Clicked a Hub
+                const hubId = e.target.id();
+                let targetIds = currentSelection;
+                if (!currentSelection.includes(hubId)) {
+                    state.setSelection([hubId]);
+                    targetIds = [hubId];
+                }
+                // Re-use logic to open selection menu (it's generic)
+                openAnchorMenu(pointer, targetIds);
             } else {
                 // Clicked background or other
-                // If we have selected anchors, show menu for them
+                // If we have selected anchors or hubs, show menu for them
                 const selectedAnchors = state.anchors.filter(a => currentSelection.includes(a.id));
-                if (selectedAnchors.length > 0) {
+                const selectedHubs = state.hubs.filter(h => currentSelection.includes(h.id));
+
+                if (selectedAnchors.length > 0 || selectedHubs.length > 0) {
                     openAnchorMenu(pointer, currentSelection);
                 } else {
                     // Default Logic (Wall Loop, etc or just nothing)
@@ -1745,7 +1752,31 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
         stage.on('dblclick', handleDblClick);
         stage.on('contextmenu', handleContextMenu);
 
-        // Global key handler is attached to window in useEffect (above)
+        // Global key handler is attached to window in useEffect (above) - Actually, let's attach it here locally to window
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                const state = useProjectStore.getState();
+                const selectedIds = state.selectedIds;
+                if (selectedIds.length > 0) {
+                    // Check for Anchors
+                    const anchorsToDelete = state.anchors.filter(a => selectedIds.includes(a.id));
+                    anchorsToDelete.forEach(a => state.removeAnchor(a.id));
+
+                    // Check for Hubs
+                    const hubsToDelete = state.hubs.filter(h => selectedIds.includes(h.id));
+                    hubsToDelete.forEach(h => state.removeHub(h.id));
+
+                    // Check for Walls (optional, if we want deletion for walls too)
+                    const wallsToDelete = state.walls.filter(w => selectedIds.includes(w.id));
+                    wallsToDelete.forEach(w => state.removeWall(w.id));
+
+                    // Deselect
+                    state.setSelection([]);
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
 
         return () => {
             stage.off('mousedown', handleMouseDown);
@@ -1753,6 +1784,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
             stage.off('mouseup', handleMouseUp);
             stage.off('dblclick', handleDblClick);
             stage.off('contextmenu', handleContextMenu);
+            window.removeEventListener('keydown', handleKeyDown);
         };
     }, [stage, handleMouseDown, handleMouseMove, handleMouseUp, handleDblClick, handleContextMenu]);
 

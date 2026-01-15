@@ -11,6 +11,7 @@ import { ValidationLayer } from './Layers/ValidationLayer';
 import InteractionLayer from './InteractionLayer';
 import { DimensionsLayer } from './Layers/DimensionsLayer';
 import { AnchorsLayer } from './Layers/AnchorsLayer';
+import { HubsLayer } from './Layers/HubsLayer';
 import { ContextMenu } from '../UI/ContextMenu';
 import { detectRooms } from '../../utils/room-detection';
 import { generateOffsets, generateSkeletonLines, generateMedialAxis, generateSimplifiedSkeleton } from '../../utils/geometry-tools';
@@ -299,6 +300,7 @@ export const MainStage: React.FC = () => {
                     {/* Layer 3: Overlay, Interaction, Anchors (Must be Top) */}
                     <Layer key="layer-top">
                         <DimensionsLayer />
+                        <HubsLayer />
                         <AnchorsLayer key="anchors" />
                         <InteractionLayer
                             stage={stage}

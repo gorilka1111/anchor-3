@@ -1,6 +1,7 @@
 import { Ribbon } from './components/UI/Ribbon';
 import { AutoPlacementSidebar } from './components/UI/Sidebar/AutoPlacementSidebar';
 import { ExportSidebar } from './components/UI/Sidebar/ExportSidebar';
+import { BOMModal } from './components/UI/Modals/BOMModal';
 import { MainStage } from './components/Canvas/MainStage';
 
 import { useProjectStore } from './store/useProjectStore';
@@ -11,6 +12,7 @@ function App() {
   return (
     <div className={`flex flex-col h-screen w-screen bg-[var(--bg-canvas)] ${theme === 'light' ? 'theme-light' : ''}`}>
       <Ribbon />
+      <BOMModal />
       <AutoPlacementSidebar />
       <ExportSidebar />
       <div className="flex-1 w-full h-full">

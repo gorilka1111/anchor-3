@@ -44,7 +44,23 @@ export interface Dimension {
     textOffset?: { x: number; y: number }; // Offset from default position
 }
 
-export type ToolType = 'select' | 'wall' | 'wall_rect' | 'wall_rect_edge' | 'anchor' | 'anchor_auto' | 'scale' | 'dimension' | 'trim' | 'extend' | 'mirror' | 'placement_area' | 'export_area';
+export type ToolType = 'select' | 'wall' | 'wall_rect' | 'wall_rect_edge' | 'anchor' | 'anchor_auto' | 'hub' | 'scale' | 'dimension' | 'trim' | 'extend' | 'mirror' | 'placement_area' | 'export_area';
+
+export interface Hub {
+    id: string;
+    x: number;
+    y: number;
+    capacity: 2 | 6 | 12 | 24;
+    name: string;
+}
+
+export interface Cable {
+    id: string;
+    fromId: string; // Hub or Anchor ID
+    toId: string;   // Anchor ID
+    points: Point[]; // Orthogonal path
+    length: number; // Meters
+}
 
 export interface ProjectLayers {
     walls: boolean;
@@ -55,6 +71,8 @@ export interface ProjectLayers {
     rooms: boolean;
     roomLabels: boolean;
     centroids: boolean;
+    hubs: boolean;
+    cables: boolean;
 }
 
 export const MATERIAL_PROPERTIES: Record<WallMaterial, WallPhysics> = {

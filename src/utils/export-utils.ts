@@ -226,6 +226,78 @@ export const exportCanvas = async (stage: Konva.Stage, options: ExportOptions) =
             pdfDoc.setTitle('Anchor Planner Export');
             pdfDoc.setProducer('Anchor Planner Pro');
 
+            // --- BOM PAGE ---
+            try {
+                const { calculateBOM } = await import('./bom-calculator');
+                const bomData = calculateBOM();
+
+                // Add BOM Page
+                const bomPage = pdfDoc.addPage([595.28, 841.89]); // A4 Portrait
+                const { height } = bomPage.getSize();
+
+                // Title
+                bomPage.drawText('Bill of Materials', {
+                    x: 50,
+                    y: height - 50,
+                    size: 20,
+                });
+
+                bomPage.drawText(`Date: ${new Date().toLocaleDateString()}`, {
+                    x: 50,
+                    y: height - 80,
+                    size: 10,
+                });
+
+                // Table Header
+                let y = height - 120;
+                const xItem = 50;
+                const xQty = 300;
+                const xDesc = 400;
+
+                const drawRow = (item: string, qty: string, desc: string, isHeader = false) => {
+                    const size = isHeader ? 12 : 10;
+                    bomPage.drawText(item, { x: xItem, y, size });
+                    bomPage.drawText(qty, { x: xQty, y, size });
+                    if (desc) bomPage.drawText(desc, { x: xDesc, y, size });
+                    y -= 20;
+                };
+
+                // Header
+                bomPage.drawLine({ start: { x: 50, y: y + 10 }, end: { x: 550, y: y + 10 }, thickness: 1 });
+                drawRow('Item', 'Quantity', 'Notes', true);
+                bomPage.drawLine({ start: { x: 50, y: y + 10 }, end: { x: 550, y: y + 10 }, thickness: 1 });
+                y -= 10;
+
+                // Data
+                const items = [
+                    { name: 'Anchors', quantity: bomData.anchors.toString(), notes: 'BlueIoT Anchors' },
+                    { name: 'Connection Hubs', quantity: bomData.hubs.total.toString(), notes: 'Total Units' },
+                ];
+
+                if (bomData.hubs.byCapacity) {
+                    Object.entries(bomData.hubs.byCapacity).forEach(([cap, count]) => {
+                        items.push({ name: ` - ${cap}-Port Hub`, quantity: count.toString(), notes: '' });
+                    });
+                }
+
+                items.push({ name: 'Cables (CAT6)', quantity: bomData.cables.count.toString(), notes: 'Total Runs' });
+                items.push({ name: 'Total Cable Length', quantity: Math.ceil(bomData.cables.totalLength) + ' m', notes: 'Estimated' });
+                items.push({ name: 'Total w/ Margin (+20%)', quantity: Math.ceil(bomData.cables.totalLengthWithMargin) + ' m', notes: 'Recommended' });
+
+                items.forEach(item => {
+                    drawRow(item.name, item.quantity, item.notes || '');
+                    // Basic overflow check
+                    if (y < 50) {
+                        pdfDoc.addPage([595.28, 841.89]);
+                        y = height - 50;
+                    }
+                });
+
+            } catch (e) {
+                console.error("Failed to add BOM page", e);
+            }
+
+
             const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
             const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
             await saveFile(blob, defaultName);

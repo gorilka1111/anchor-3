@@ -2,6 +2,7 @@ import React from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { ToolbarButton } from './ToolbarButton';
 import { DXFLayerManager } from './DXFLayerManager';
+import { SlotManager } from './SlotManager'; // Imported
 import {
     MousePointer2,
     Square,
@@ -10,23 +11,27 @@ import {
     Wifi,
     Download,
     Upload,
+    Calculator,
     Info,
     PenTool,
     Undo2,
     Redo2,
-    Wand2, // Icon for Detection
-    Grid, // Icon for Rooms
-    Type, // Icon for Labels
-    Signal, // Icon for Heatmap
-
-
-    FileUp // NEW Icon
+    Wand2,
+    Grid,
+    Type,
+    Signal,
+    Router,
+    Network,
+    FileUp,
+    Activity,
+    Share2,
+    Ghost,
+    BookTemplate, // New Icon
+    FilePlus,
 } from 'lucide-react';
 import { WallDetectionModal } from './WallDetectionModal';
 import { SettingsPanel } from './SettingsPanel';
 import { Settings } from 'lucide-react';
-
-
 
 // Custom Icons
 const RectWallIcon = ({ size, ...props }: any) => (
@@ -58,13 +63,15 @@ export const Ribbon: React.FC = () => {
         layers,
         toggleLayer,
         isScaleSet,
-        // Geometry
     } = useProjectStore();
 
     const [isConfigOpen, setIsConfigOpen] = React.useState<boolean | string>(false);
     const [isLayerManagerOpen, setIsLayerManagerOpen] = React.useState(false);
     const { isAutoPlacementOpen, setIsAutoPlacementOpen } = useProjectStore();
     const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    // New State for Slot Manager
+    const [isSlotsOpen, setIsSlotsOpen] = React.useState(false);
 
     // Normalize check
     const shouldShowConfig = isConfigOpen;
@@ -76,6 +83,8 @@ export const Ribbon: React.FC = () => {
     return (
         <div className="h-16 panel-bg border-b panel-border flex items-center px-4 shadow-xl z-20 relative select-none">
 
+            {/* Slot Manager Popup */}
+            {isSlotsOpen && <SlotManager onClose={() => setIsSlotsOpen(false)} />}
 
             {/* Config Modal Overlay */}
             {isConfigOpen === true && (
@@ -182,7 +191,7 @@ export const Ribbon: React.FC = () => {
                         <ToolbarButton icon={RectFromWallIcon as any} label="3-Pt Rect" active={activeTool === 'wall_rect_edge'} onClick={() => setTool('wall_rect_edge')} tooltip="3-Point Rectangle (Start, Base End, Height)" iconSize={16} className="p-1.5" />
                     </div>
 
-                    {/* Presets - Vertical Stack - IMPROVED LAYOUT */}
+                    {/* Presets - Vertical Stack */}
                     <div className="flex flex-col space-y-1 justify-center border-l panel-border pl-2 h-full py-1">
                         <button onClick={() => setWallPreset('thick')} className={`text-[10px] px-2 py-0.5 rounded leading-none transition-colors ${wallPreset === 'thick' ? 'bg-[#0078d4] text-white' : 'hover:bg-[#333] text-secondary'}`}>Thick</button>
                         <button onClick={() => setWallPreset('wide')} className={`text-[10px] px-2 py-0.5 rounded leading-none transition-colors ${wallPreset === 'wide' ? 'bg-[#0078d4] text-white' : 'hover:bg-[#333] text-secondary'}`}>Wide</button>
@@ -201,19 +210,21 @@ export const Ribbon: React.FC = () => {
                 </div>
             </div>
 
+
+
             <div className="h-10 w-px bg-[var(--border-color)] mx-2"></div>
 
-
-
-
-
-            {/* Import Group */}
+            {/* Project Group */}
             <div className="flex flex-col items-center px-1">
-                <span className="text-[10px] text-secondary mb-1 uppercase scale-90">Import</span>
-                <div className="flex space-x-0.5">
-                    <label className="cursor-pointer flex items-center justify-center p-1.5 rounded hover:bg-[#333] transition-colors text-secondary hover:text-white" title="Import File (DXF, PDF, IMG)">
-                        <Upload size={16} />
-                        <input type="file" accept=".png, .jpg, .jpeg, .pdf, .dxf" className="hidden" onChange={async (e) => {
+                <span className="text-[10px] text-secondary mb-1 uppercase scale-90">Project</span>
+                <div className="flex items-center space-x-1">
+                    {/* Hidden Input for Import */}
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        accept=".png, .jpg, .jpeg, .pdf, .dxf"
+                        className="hidden"
+                        onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (!file) return;
                             const ext = file.name.split('.').pop()?.toLowerCase();
@@ -241,8 +252,27 @@ export const Ribbon: React.FC = () => {
                                 }
                             } catch (err) { console.error(err); alert(`Failed to import ${ext?.toUpperCase()} file.`); }
                             e.target.value = '';
-                        }} />
-                    </label>
+                        }}
+                    />
+
+                    <ToolbarButton icon={FileUp} label="Import" onClick={() => fileInputRef.current?.click()} tooltip="Import DXF/Image" />
+
+                    <ToolbarButton
+                        icon={Calculator}
+                        label="BOM"
+                        active={useProjectStore((s) => s.isBOMOpen)}
+                        onClick={() => useProjectStore.getState().setIsBOMOpen(true)}
+                        tooltip="Bill of Materials"
+                    />
+
+                    {/* NEW: Slots Button */}
+                    <ToolbarButton
+                        icon={BookTemplate}
+                        label="Slots"
+                        active={isSlotsOpen}
+                        onClick={() => setIsSlotsOpen(!isSlotsOpen)}
+                        tooltip="Quick Save Slots"
+                    />
 
                     <button
                         onClick={() => setIsLayerManagerOpen(!isLayerManagerOpen)}
@@ -255,8 +285,6 @@ export const Ribbon: React.FC = () => {
             </div>
 
             <div className="h-10 w-px bg-[var(--border-color)] mx-2"></div>
-
-
 
             {/* Add Devices Group */}
             <div className="flex flex-col items-center px-1">
@@ -287,8 +315,6 @@ export const Ribbon: React.FC = () => {
                     </button>
                     {shouldShowConfig === 'anchors' && (
                         <div className="absolute top-12 left-0 w-56 bg-[#333] border border-[#555] p-3 shadow-2xl rounded z-50 text-white animate-in slide-in-from-top-2">
-                            {/* ... Anchor Settings Content (Unchanged) ... */}
-                            {/* Re-implementing compact settings if needed or keep existing popup */}
                             <h3 className="text-xs font-bold mb-2 uppercase text-gray-400">Anchor Settings</h3>
                             <div className="flex flex-col space-y-3">
                                 <div className="flex flex-col space-y-1">
@@ -326,12 +352,14 @@ export const Ribbon: React.FC = () => {
                     <div className="w-4 h-4"></div>
                     <button onClick={() => toggleLayer('roomLabels')} title="Show/Hide Room Labels" className={`p-0.5 rounded hover:bg-[#333] ${layers.roomLabels ? 'text-blue-400' : 'text-secondary'}`}> <Type size={14} /> </button>
                     <button onClick={() => toggleLayer('rooms')} title="Show/Hide Rooms" className={`p-0.5 rounded hover:bg-[#333] ${layers.rooms ? 'text-blue-400' : 'text-secondary'}`}> <Grid size={14} /> </button>
+                    <button onClick={() => toggleLayer('hubs')} title="Show/Hide Hubs" className={`p-0.5 rounded hover:bg-[#333] ${layers.hubs ? 'text-blue-400' : 'text-secondary'}`}> <Share2 size={14} /> </button>
+                    <button onClick={() => toggleLayer('cables')} title="Show/Hide Cables" className={`p-0.5 rounded hover:bg-[#333] ${layers.cables ? 'text-blue-400' : 'text-secondary'}`}> <Activity size={14} /> </button>
                 </div>
             </div>
 
             <div className="h-10 w-px bg-[var(--border-color)] mx-2"></div>
 
-            {/* Anchors View Group - FIXED */}
+            {/* Anchors View Group */}
             <div className="flex flex-col items-center px-1">
                 <span className="text-[10px] text-secondary mb-1 uppercase scale-90">Anchors</span>
                 <div className="flex space-x-1 items-center h-full pb-1">
@@ -372,12 +400,80 @@ export const Ribbon: React.FC = () => {
 
             <div className="h-10 w-px bg-[var(--border-color)] mx-2"></div>
 
+            {/* Network Group */}
+            <div className="flex flex-col items-center px-1">
+                <span className="text-[10px] text-secondary mb-1 uppercase scale-90">Network</span>
+                <div className="flex items-center space-x-2">
+                    <ToolbarButton icon={Router} label="Hub" active={activeTool === 'hub'} onClick={() => setTool('hub')} tooltip="Place Connection Hub (H)" iconSize={16} className="p-1.5" />
 
+                    <div className="flex flex-col space-y-1 justify-center border-l border-r panel-border px-2 h-full py-1">
+                        <select
+                            value={useProjectStore.getState().activeHubCapacity}
+                            onChange={(e) => useProjectStore.getState().setHubCapacity(parseInt(e.target.value) as any)}
+                            className="bg-[#222] text-[10px] text-secondary focus:outline-none cursor-pointer border border-[#444] rounded px-1"
+                            title="Hub Capacity (Ports)"
+                        >
+                            <option value={2}>2 Port</option>
+                            <option value={6}>6 Port</option>
+                            <option value={12}>12 Port</option>
+                            <option value={24}>24 Port</option>
+                        </select>
+                        <select
+                            value={useProjectStore.getState().activeTopology || 'star'}
+                            onChange={(e) => useProjectStore.getState().setTopology(e.target.value as any)}
+                            className="bg-[#222] text-[10px] text-secondary focus:outline-none cursor-pointer border border-[#444] rounded px-1"
+                            title="Connection Topology"
+                        >
+                            <option value="star">Star</option>
+                            <option value="daisy">Daisy</option>
+                        </select>
+                    </div>
+
+                    <div className="flex items-center space-x-1 pl-1 h-full">
+                        <ToolbarButton
+                            icon={Ghost}
+                            label="Pass"
+                            active={useProjectStore.getState().allowOutsideConnections}
+                            onClick={() => useProjectStore.getState().setAllowOutsideConnections(!useProjectStore.getState().allowOutsideConnections)}
+                            tooltip="Allow Cables to Pass Through Walls"
+                            iconSize={16}
+                            className="p-1.5"
+                        />
+                        <ToolbarButton
+                            icon={Network}
+                            label="Link"
+                            active={false}
+                            onClick={async () => {
+                                const { autoConnect } = await import('../../utils/cabling');
+                                autoConnect();
+                            }}
+                            tooltip="Auto-Connect Anchors to Hubs"
+                            iconSize={16}
+                            className="p-1.5 text-blue-400"
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div className="h-10 w-px bg-[var(--border-color)] mx-2"></div>
 
             <div className="flex-grow"></div>
 
-            {/* ... File & Info Groups (Unchanged) ... */}
             <div className="flex items-center space-x-1 px-4 border-l panel-border">
+                {/* NEW PROJECT Button */}
+                <ToolbarButton
+                    icon={FilePlus}
+                    label="New"
+                    onClick={() => {
+                        if (window.confirm("Are you sure you want to start a new project? Unsaved changes will be lost.")) {
+                            useProjectStore.getState().newProject();
+                        }
+                    }}
+                    tooltip="New Project (Clear All)"
+                    className="opacity-80 hover:opacity-100 p-1.5"
+                    iconSize={16}
+                />
+
                 {/* LOAD Button (Triggered via Ref) */}
                 <div>
                     <input
@@ -442,6 +538,9 @@ export const Ribbon: React.FC = () => {
                             wallPreset: state.wallPreset,
                             anchorMode: state.anchorMode,
                             theme: state.theme,
+                            hubs: state.hubs,
+                            cables: state.cables,
+                            allowOutsideConnections: state.allowOutsideConnections,
                             anchorsSettings: {
                                 radius: state.anchorRadius,
                                 shape: state.anchorShape,
@@ -523,6 +622,6 @@ export const Ribbon: React.FC = () => {
 
             {/* Render DXF Layer Manager floating */}
             {isLayerManagerOpen && <DXFLayerManager onClose={() => setIsLayerManagerOpen(false)} />}
-        </div>
+        </div >
     );
 };

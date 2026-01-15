@@ -1,12 +1,15 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
 import { v4 as uuidv4 } from 'uuid';
-import type { Wall, Anchor, Dimension, ProjectLayers, ToolType, ImportedObject, ImageObject, DXFObject, Point } from '../types';
+import type { Wall, Anchor, Dimension, ProjectLayers, ToolType, ImportedObject, ImageObject, DXFObject, Point, Hub, Cable } from '../types';
+import { getOrthogonalPath, calculateLength } from '../utils/routing';
 
 interface ProjectState {
     scaleRatio: number; // px per meter
     walls: Wall[];
     anchors: Anchor[];
+    hubs: Hub[];
+    cables: Cable[];
     dimensions: Dimension[];
     layers: ProjectLayers;
     activeTool: ToolType;
@@ -27,6 +30,10 @@ interface ProjectState {
     anchorRadius: number;
     anchorShape: 'circle' | 'square' | 'triangle' | 'star' | 'hex';
     showAnchorRadius: boolean;
+
+    // Hub Settings
+    activeHubCapacity: 2 | 6 | 12 | 24;
+    activeTopology: 'star' | 'daisy';
 
     // Geometry Tools
     showOffsets: boolean;
@@ -63,6 +70,8 @@ interface ProjectState {
     // Export Tool State
     isExportSidebarOpen: boolean;
     setIsExportSidebarOpen: (v: boolean) => void;
+    isBOMOpen: boolean; // NEW
+    setIsBOMOpen: (v: boolean) => void; // NEW
     exportRegion: Point[] | null;
     setExportRegion: (region: Point[] | null) => void;
 
@@ -87,6 +96,8 @@ interface ProjectState {
     setAnchorRadius: (r: number) => void;
     setAnchorShape: (s: 'circle' | 'square') => void;
     setShowAnchorRadius: (v: boolean) => void;
+    setHubCapacity: (c: 2 | 6 | 12 | 24) => void;
+    setTopology: (t: 'star' | 'daisy') => void;
 
 
     // Geometry Actions
@@ -123,6 +134,12 @@ interface ProjectState {
     addAnchors: (anchors: Omit<Anchor, 'id'>[]) => void;
     setAnchors: (anchors: Anchor[]) => void;
     removeAnchor: (id: string) => void;
+    addHub: (hub: Hub) => void;
+    updateHub: (id: string, updates: Partial<Hub>) => void;
+    removeHub: (id: string) => void;
+
+    setCables: (cables: Cable[]) => void;
+    updateCable: (id: string, updates: Partial<Cable>) => void;
 
     // Import State (Multi-Object)
     importedObjects: ImportedObject[];
@@ -147,12 +164,17 @@ interface ProjectState {
     groupAnchors: (ids: string[]) => void;
     ungroupAnchors: (ids: string[]) => void;
     // Save/Load
+    // Save/Load
     loadProject: (data: ProjectData) => void;
+    newProject: () => void;
 
     // Clipboard
     clipboard: { walls: Wall[], anchors: Anchor[] } | null;
     copySelection: () => void;
     pasteClipboard: () => void;
+
+    allowOutsideConnections: boolean;
+    setAllowOutsideConnections: (allow: boolean) => void;
 }
 
 export interface ProjectData {
@@ -161,6 +183,8 @@ export interface ProjectData {
     scaleRatio: number;
     walls: Wall[];
     anchors: Anchor[];
+    hubs?: Hub[];
+    cables?: Cable[];
     dimensions: Dimension[];
     layers: ProjectLayers;
     wallPreset: 'default' | 'thick' | 'wide';
@@ -184,6 +208,7 @@ export interface ProjectData {
     };
     isAutoPlacementOpen?: boolean;
     importedObjects: ImportedObject[];
+    allowOutsideConnections?: boolean;
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -192,6 +217,12 @@ export const useProjectStore = create<ProjectState>()(
             scaleRatio: 50, // Default 50px = 1m
             walls: [],
             anchors: [],
+            hubs: [],
+            cables: [],
+            importedObjects: [], // Initialize empty array
+            activeHubCapacity: 12, // Default
+            activeTopology: 'star',
+
             dimensions: [],
             layers: {
                 walls: true,
@@ -202,6 +233,8 @@ export const useProjectStore = create<ProjectState>()(
                 rooms: true,
                 roomLabels: true,
                 centroids: false, // New Centroid Layer
+                hubs: true,
+                cables: true,
             },
             rooms: true,
             roomLabels: true,
@@ -226,6 +259,8 @@ export const useProjectStore = create<ProjectState>()(
             anchorRadius: 5,
             anchorShape: 'circle',
             showAnchorRadius: true,
+
+            // Hub Defaults
 
             // Geometry Tools
             showOffsets: false,
@@ -257,8 +292,11 @@ export const useProjectStore = create<ProjectState>()(
                 targetScope: 'all',
             },
             theme: 'dark', // Default
+            allowOutsideConnections: false, // Default to strict routing
 
             // Actions
+            setAllowOutsideConnections: (v) => set({ allowOutsideConnections: v }),
+
             setScaleRatio: (ratio) => set({ scaleRatio: ratio, isScaleSet: true }),
             setTheme: (t) => set({ theme: t }),
             setTool: (tool) => set({ activeTool: tool }),
@@ -282,6 +320,9 @@ export const useProjectStore = create<ProjectState>()(
                 showAnchorRadius: v,
                 anchors: state.anchors.map(a => ({ ...a, showRadius: v }))
             })),
+            setHubCapacity: (c) => set({ activeHubCapacity: c }),
+            setTopology: (t) => set({ activeTopology: t }),
+
 
             // Geometry Tools Actions
             setShowOffsets: (v) => set({ showOffsets: v }),
@@ -310,6 +351,8 @@ export const useProjectStore = create<ProjectState>()(
 
             isExportSidebarOpen: false,
             setIsExportSidebarOpen: (v) => set({ isExportSidebarOpen: v }),
+            isBOMOpen: false,
+            setIsBOMOpen: (v) => set({ isBOMOpen: v }),
             exportRegion: null,
             setExportRegion: (region) => set({ exportRegion: region }),
 
@@ -574,8 +617,70 @@ export const useProjectStore = create<ProjectState>()(
                 };
             }),
 
-            removeAnchor: (id) => set((state) => ({
-                anchors: state.anchors.filter((a) => a.id !== id),
+            removeAnchor: (id) => set((state) => {
+                // 1. Find connected cables
+                const incomingCables = state.cables.filter(c => c.toId === id);
+                const outgoingCables = state.cables.filter(c => c.fromId === id);
+
+                // 2. Prepare new cables (healing)
+                const newCables: Cable[] = [];
+
+                incomingCables.forEach(inc => {
+                    outgoingCables.forEach(outc => {
+                        // Create connection from inc.fromId to outc.toId
+                        let startPos: Point | undefined;
+                        const fromHub = state.hubs.find(h => h.id === inc.fromId);
+                        const fromAnchor = state.anchors.find(a => a.id === inc.fromId);
+                        if (fromHub) startPos = { x: fromHub.x, y: fromHub.y };
+                        else if (fromAnchor) startPos = { x: fromAnchor.x, y: fromAnchor.y };
+
+                        const toAnchor = state.anchors.find(a => a.id === outc.toId);
+                        let endPos: Point | undefined;
+                        if (toAnchor) endPos = { x: toAnchor.x, y: toAnchor.y };
+
+                        if (startPos && endPos) {
+                            // If allowed outside connections, pass empty walls to simulate no obstacles
+                            const routingWalls = state.allowOutsideConnections ? [] : state.walls;
+                            const points = getOrthogonalPath(startPos, endPos, routingWalls);
+                            const length = calculateLength(points, state.scaleRatio);
+
+                            newCables.push({
+                                id: uuidv4(),
+                                fromId: inc.fromId,
+                                toId: outc.toId,
+                                points,
+                                length
+                            });
+                        }
+                    });
+                });
+
+                // 3. Remove old cables and add new ones
+                const remainingCables = state.cables.filter(c => c.toId !== id && c.fromId !== id);
+
+                return {
+                    anchors: state.anchors.filter((a) => a.id !== id),
+                    cables: [...remainingCables, ...newCables]
+                };
+            }),
+
+            addHub: (hub) => set((state) => ({
+                hubs: [...state.hubs, hub]
+            })),
+
+            updateHub: (id, updates) => set((state) => ({
+                hubs: state.hubs.map(h => h.id === id ? { ...h, ...updates } : h)
+            })),
+
+            removeHub: (id) => set((state) => ({
+                hubs: state.hubs.filter(h => h.id !== id),
+                // Remove connecting cables? Yes, conceptually.
+                cables: state.cables.filter(c => c.fromId !== id && c.toId !== id)
+            })),
+
+            setCables: (cables) => set({ cables }),
+            updateCable: (id, updates) => set((state) => ({
+                cables: state.cables.map(c => c.id === id ? { ...c, ...updates } : c)
             })),
 
             toggleLayer: (layer) => set((state) => {
@@ -596,7 +701,6 @@ export const useProjectStore = create<ProjectState>()(
                 return { layers: newLayers };
             }),
 
-            importedObjects: [],
             activeImportId: null,
 
             addImportedObject: (obj) => set((state) => {
@@ -718,16 +822,17 @@ export const useProjectStore = create<ProjectState>()(
                 }
 
                 return {
-                    ...state,
-                    scaleRatio: data.scaleRatio || 50,
-                    walls: data.walls || [],
-                    anchors: data.anchors || [],
-                    dimensions: data.dimensions || [],
-                    layers: data.layers || state.layers,
-                    wallPreset: data.wallPreset || state.wallPreset,
-                    anchorMode: data.anchorMode || state.anchorMode,
-                    theme: data.theme || state.theme,
-
+                    version: data.version,
+                    lastLoaded: data.timestamp,
+                    scaleRatio: data.scaleRatio,
+                    walls: data.walls,
+                    anchors: data.anchors,
+                    hubs: data.hubs || [],
+                    cables: data.cables || [],
+                    dimensions: data.dimensions,
+                    layers: data.layers,
+                    wallPreset: data.wallPreset,
+                    anchorMode: data.anchorMode,
                     // Restore Settings
                     anchorRadius: data.anchorsSettings?.radius ?? state.anchorRadius,
                     anchorShape: data.anchorsSettings?.shape ?? state.anchorShape,
@@ -736,11 +841,6 @@ export const useProjectStore = create<ProjectState>()(
                     showHeatmap: data.heatmapSettings?.show ?? state.showHeatmap,
                     heatmapResolution: data.heatmapSettings?.resolution ?? state.heatmapResolution,
                     heatmapThresholds: data.heatmapSettings?.thresholds || { red: -65, orange: -70, yellow: -75, green: -80, blue: -85 },
-                    importedObjects: data.importedObjects || [],
-                    activeImportId: null,
-                    selectedIds: [], // Clear selection
-
-                    isAutoPlacementOpen: data.isAutoPlacementOpen ?? state.isAutoPlacementOpen,
                     optimizationSettings: data.optimizationSettings || {
                         radius: 5,
                         coverageTarget: 90,
@@ -749,9 +849,26 @@ export const useProjectStore = create<ProjectState>()(
                     },
 
                     isScaleSet: true, // Assume loaded project has scale set
-                    lastLoaded: Date.now()
+                    allowOutsideConnections: data.allowOutsideConnections ?? state.allowOutsideConnections
                 };
             }),
+
+            newProject: () => set(() => ({
+                walls: [],
+                anchors: [],
+                hubs: [],
+                cables: [],
+                dimensions: [],
+                importedObjects: [],
+                selectedIds: [],
+                scaleRatio: 50,
+                isScaleSet: false,
+                activeTool: 'select',
+                lastLoaded: 0,
+                placementArea: null,
+                activeImportId: null,
+                // Keep settings/theme
+            })),
 
             // Clipboard Implementation
             clipboard: null,
