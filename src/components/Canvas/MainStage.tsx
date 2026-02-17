@@ -143,10 +143,35 @@ export const MainStage: React.FC = () => {
 
         if (!stage) return;
 
-        // Standard Touchpad Panning (Two-finger scroll)
-        // On Mac/Modern browsers, touchpad scroll is a wheel event WITHOUT ctrlKey.
-        // Pinch-to-zoom is a wheel event WITH ctrlKey.
-        if (!e.evt.ctrlKey && !e.evt.metaKey) {
+        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+        const isControl = e.evt.ctrlKey || e.evt.metaKey;
+
+        // --- Heuristic to detect Trackpad vs Mouse Wheel ---
+        // 1. If deltaX is present, it's almost certainly a trackpad/smooth-scrolling device.
+        // 2. If deltaY is fractional (not an integer), it's a trackpad.
+        // 3. High frequency / small deltas are also trackpad-like, but deltaX is the best indicator.
+        const isTrackpad = Math.abs(e.evt.deltaX) > 0 || !Number.isInteger(e.evt.deltaY);
+
+        // --- Decision Logic ---
+        // Pinch-to-zoom (Ctrl+Wheel) ALWAYS zooms.
+        // On Mac: Trackpad vertical scroll is traditionally Pan. Vertical Mouse Wheel can be Zoom.
+        // On Windows: Scroll wheel is traditionally Zoom. Trackpad 2-finger scroll is Pan.
+
+        let shouldZoom = isControl;
+
+        if (!isControl) {
+            if (isMac) {
+                // On Mac, we only zoom if it's NOT a trackpad (i.e. it's a discrete wheel)
+                // However, many Mac users expect 2-finger pan.
+                shouldZoom = !isTrackpad;
+            } else {
+                // On Windows/Linux, we zoom on vertical scroll unless it look like a trackpad pan
+                shouldZoom = !isTrackpad;
+            }
+        }
+
+        if (!shouldZoom) {
+            // --- PANNING ---
             stage.position({
                 x: stage.x() - e.evt.deltaX,
                 y: stage.y() - e.evt.deltaY
@@ -155,7 +180,7 @@ export const MainStage: React.FC = () => {
             return;
         }
 
-        // Zoom Logic (Ctrl + Mouse Wheel or Pinch-to-Zoom)
+        // --- ZOOMING ---
         const scaleBy = 1.05; // Finer zoom
         const oldScale = stage.scaleX();
         const pointer = stage.getPointerPosition();
@@ -166,6 +191,8 @@ export const MainStage: React.FC = () => {
             y: (pointer.y - stage.y()) / oldScale,
         };
 
+        // If it's a trackpad "scroll to zoom" (unusual but possible) or Ctrl+Wheel
+        // We use deltaY to determine direction.
         const newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
 
         // Limit scale
