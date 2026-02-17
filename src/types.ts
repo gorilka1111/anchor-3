@@ -58,7 +58,7 @@ export interface Dimension {
     textOffset?: { x: number; y: number }; // Offset from default position
 }
 
-export type ToolType = 'select' | 'wall' | 'wall_rect' | 'wall_rect_edge' | 'door' | 'anchor' | 'anchor_auto' | 'hub' | 'scale' | 'dimension' | 'trim' | 'extend' | 'mirror' | 'placement_area' | 'export_area' | 'cable_edit';
+export type ToolType = 'select' | 'pan' | 'wall' | 'wall_rect' | 'wall_rect_edge' | 'door' | 'anchor' | 'anchor_auto' | 'hub' | 'scale' | 'dimension' | 'trim' | 'extend' | 'mirror' | 'placement_area' | 'export_area' | 'cable_edit';
 
 export interface Hub {
     id: string;

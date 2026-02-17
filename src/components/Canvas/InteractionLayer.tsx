@@ -242,6 +242,19 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
         return () => window.removeEventListener('request-export', handleExportRequest);
     }, [stage]);
 
+    // Handle cursor changes when switching tools
+    useEffect(() => {
+        if (!stage) return;
+        const container = stage.container();
+        if (activeTool === 'pan') {
+            container.style.setProperty('cursor', isPanning ? 'grabbing' : 'grab');
+        } else if (['wall', 'wall_rect', 'wall_rect_edge', 'dimension', 'anchor', 'hub', 'placement_area', 'export_area'].includes(activeTool)) {
+            container.style.setProperty('cursor', 'crosshair');
+        } else {
+            container.style.setProperty('cursor', 'default');
+        }
+    }, [activeTool, stage, isPanning]);
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             // Ignore if User is typing in an Input or Textarea
@@ -375,6 +388,7 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     }
                 }
                 if (code === 'KeyH') setTool('hub');
+                if (code === 'KeyP') setTool(activeTool === 'pan' ? 'select' : 'pan');
             }
         };
         const handleKeyUp = (e: KeyboardEvent) => {
@@ -676,6 +690,15 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
 
         isMouseDown.current = true;
         hasDragged.current = false;
+
+        // Pan Tool LMB Handling
+        if (e.evt.button === 0 && activeTool === 'pan') {
+            e.evt.preventDefault();
+            setIsPanning(true);
+            lastPanPos.current = { x: stagePos.x, y: stagePos.y };
+            panStartTime.current = Date.now();
+            return;
+        }
 
         // ALT + Left Click (Import Selection)
         if (e.evt.altKey && e.evt.button === 0) {
@@ -1451,13 +1474,20 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     }
                 }
                 if (!foundHover) {
-                    stage?.container().style.setProperty('cursor', 'default');
+                    if (activeTool === 'pan') {
+                        stage?.container().style.setProperty('cursor', isPanning ? 'grabbing' : 'grab');
+                    } else {
+                        stage?.container().style.setProperty('cursor', 'default');
+                    }
                 }
             }
         }
 
-        // 1. Panning Logic (RMB)
+        // 1. Panning Logic
         if (isPanning && stage) {
+            if (activeTool === 'pan') {
+                stage.container().style.setProperty('cursor', 'grabbing');
+            }
             const stagePos = stage.getPointerPosition();
             if (stagePos && lastPanPos.current) {
                 const dx = stagePos.x - lastPanPos.current.x;
@@ -1933,6 +1963,14 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({ stage, onOpe
                     setIsPanning(false);
                     checkRMBClick(e);
                     lastPanPos.current = null;
+                }
+            }
+
+            if (e.evt.button === 0 && activeTool === 'pan') {
+                if (isPanning) {
+                    setIsPanning(false);
+                    lastPanPos.current = null;
+                    if (stage) stage.container().style.setProperty('cursor', 'grab');
                 }
             }
 

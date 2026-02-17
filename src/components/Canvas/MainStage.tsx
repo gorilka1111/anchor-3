@@ -141,9 +141,22 @@ export const MainStage: React.FC = () => {
     const handleWheel = (e: any) => {
         e.evt.preventDefault();
 
-        const scaleBy = 1.1;
         if (!stage) return;
 
+        // Standard Touchpad Panning (Two-finger scroll)
+        // On Mac/Modern browsers, touchpad scroll is a wheel event WITHOUT ctrlKey.
+        // Pinch-to-zoom is a wheel event WITH ctrlKey.
+        if (!e.evt.ctrlKey && !e.evt.metaKey) {
+            stage.position({
+                x: stage.x() - e.evt.deltaX,
+                y: stage.y() - e.evt.deltaY
+            });
+            stage.batchDraw();
+            return;
+        }
+
+        // Zoom Logic (Ctrl + Mouse Wheel or Pinch-to-Zoom)
+        const scaleBy = 1.05; // Finer zoom
         const oldScale = stage.scaleX();
         const pointer = stage.getPointerPosition();
         if (!pointer) return;
@@ -156,7 +169,7 @@ export const MainStage: React.FC = () => {
         const newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
 
         // Limit scale
-        if (newScale < 0.1 || newScale > 20) return;
+        if (newScale < 0.05 || newScale > 50) return;
 
         stage.scale({ x: newScale, y: newScale });
 
@@ -165,6 +178,7 @@ export const MainStage: React.FC = () => {
             y: pointer.y - mousePointTo.y * newScale,
         };
         stage.position(newPos);
+        stage.batchDraw();
     };
     const gridColor = theme === 'light' ? '#e5e7eb' : '#555'; // Improved contrast (was #444)
     const axisColor = theme === 'light' ? '#9ca3af' : '#666';

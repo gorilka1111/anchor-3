@@ -38,6 +38,15 @@ import { ConfirmationModal } from './ConfirmationModal';
 // import { v4 as uuidv4 } from 'uuid';
 
 // Custom Icons
+const PanIcon = ({ size, ...props }: any) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        {/* Apple Fruit - Styled to look like a premium icon */}
+        <path d="M12 20.5c3.5 0 6.5-2.5 6.5-6.5s-2.5-5.5-5.5-5.5c-0.5 0-1 0.1-1.5 0.3-0.5-0.2-1-0.3-1.5-0.3-3 0-5.5 1.5-5.5 5.5s3 6.5 6.5 6.5z" fill="currentColor" fillOpacity="0.1" />
+        <path d="M12 20.5c3.5 0 6.5-2.5 6.5-6.5s-2.5-5.5-5.5-5.5c-0.5 0-1 0.1-1.5 0.3-0.5-0.2-1-0.3-1.5-0.3-3 0-5.5 1.5-5.5 5.5s3 6.5 6.5 6.5z" />
+        <path d="M12 8.5c0-2.5 1-4 2.5-4.5M12 8.5c-0.5-1-1.5-2-3-1.5" />
+    </svg>
+);
+
 const RectWallIcon = ({ size, ...props }: any) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
         <rect x="3" y="5" width="18" height="14" rx="2" />
@@ -267,6 +276,7 @@ export const Ribbon: React.FC = () => {
                 {toolbarSize !== 'small' && <span className="text-[10px] text-secondary mb-1 uppercase scale-90">Edit</span>}
                 <div className="flex space-x-0.5 items-center">
                     <ToolbarButton icon={MousePointer2} label="Select" active={activeTool === 'select'} onClick={() => setTool('select')} tooltip="Select (V / Esc)" iconSize={iconSize} className="p-1.5" />
+                    <ToolbarButton icon={PanIcon as any} label="Pan" active={activeTool === 'pan'} onClick={() => setTool('pan')} tooltip="Pan Tool (P)" iconSize={iconSize} className="p-1.5" />
                     <div className="w-px h-6 bg-[var(--border-color)] mx-1"></div>
                     {toolbarSize === 'small' ? (
                         <div className="flex flex-col gap-0.5">
