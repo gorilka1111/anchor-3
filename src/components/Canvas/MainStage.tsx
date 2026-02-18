@@ -42,26 +42,27 @@ export const MainStage: React.FC = () => {
         };
         updateSize();
 
-        // Ensure focus is on the container so keyboard events bubble correctly/window is active context
-        // Use timeout to ensure it happens after paint/mount
+        // Ensure focus is on the container so keyboard events bubble correctly
         setTimeout(() => {
             if (containerRef.current) {
                 containerRef.current.focus();
             }
         }, 100);
+
+        const handleKeyDownInternal = (e: KeyboardEvent) => {
+            if (e.key.toLowerCase() === 'f') {
+                fitView();
+            }
+        };
+
         window.addEventListener('resize', updateSize);
-        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keydown', handleKeyDownInternal);
         return () => {
             window.removeEventListener('resize', updateSize);
-            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keydown', handleKeyDownInternal);
         };
-    }, [size]);
+    }, []); // Empty dependencies to avoid infinite loop
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key.toLowerCase() === 'f') {
-            fitView();
-        }
-    };
 
 
     const {

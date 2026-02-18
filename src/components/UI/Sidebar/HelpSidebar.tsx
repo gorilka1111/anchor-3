@@ -6,7 +6,7 @@ import {
     PenTool, Lock, Square, BoxSelect,
     Wifi, Wand2, Router, Spline, Cable, Settings,
     FileUp, Calculator, Ruler, Scaling, FilePlus, MenuSquare,
-    Grid, Type, Signal, Activity, Share2
+    Grid, Type, Signal, Activity, Share2, Maximize
 } from 'lucide-react';
 
 const SIDEBAR_MIN_WIDTH = 300;
@@ -69,6 +69,13 @@ const DOCUMENTATION: HelpSection[] = [
                             <div>
                                 <p className="font-bold text-gray-200 text-xs">Pan (P)</p>
                                 <p className="text-[10px] text-gray-400 text-pretty">Click and drag to pan the view. Right-click or middle-mouse drag also pans the canvas.</p>
+                            </div>
+                        </div>
+                        <div className="flex items-start space-x-3">
+                            <div className="p-1.5 bg-gray-700/50 rounded text-gray-200 shrink-0"><Maximize size={14} /></div>
+                            <div>
+                                <p className="font-bold text-gray-200 text-xs">Fit View (F)</p>
+                                <p className="text-[10px] text-gray-400 text-pretty">Automatically adjust zoom and position to fit all project objects within the screen.</p>
                             </div>
                         </div>
                         <div className="flex items-start space-x-3">
@@ -253,7 +260,7 @@ const DOCUMENTATION: HelpSection[] = [
                 </div>
             </div>
         ),
-        searchableText: "toolbar icons interface edit view select pan undo redo layers toggles floorplan walls dimensions cables hubs rooms labels anchors heatmap signal resolution draw wall lock rect 3-pt devices network anchor auto-place hub route cable settings project manage import export slots bom measure scale new project dxf layer manager apple fruit"
+        searchableText: "toolbar icons interface edit view select pan fit maximize undo redo layers toggles floorplan walls dimensions cables hubs rooms labels anchors heatmap signal resolution draw wall lock rect 3-pt devices network anchor auto-place hub route cable settings project manage import export slots bom measure scale new project dxf layer manager apple fruit"
     },
     {
         id: 'shortcuts',
@@ -282,11 +289,12 @@ const DOCUMENTATION: HelpSection[] = [
                         <tr><td className="p-2 border-r panel-border font-mono text-accent">Alt + LMB</td><td className="p-2">Select Imported Floorplan</td></tr>
                         <tr><td className="p-2 border-r panel-border font-mono text-accent">Shift + Drag</td><td className="p-2">Move selection orthogonally</td></tr>
                         <tr><td className="p-2 border-r panel-border font-mono text-accent">Ctrl + Z</td><td className="p-2">Undo</td></tr>
+                        <tr><td className="p-2 border-r panel-border font-mono text-accent">F</td><td className="p-2">Fit all to view</td></tr>
                     </tbody>
                 </table>
             </div>
         ),
-        searchableText: "keyboard shortcuts key action w draw wall shift+w lock unlock walls r cycle rect 3-pt rect shift+a open auto-placement d measure s set scale a place anchor h place hub v esc select mode ctrl+z undo shift drag move orthogonal"
+        searchableText: "keyboard shortcuts key action w draw wall shift+w lock unlock walls r cycle rect 3-pt rect shift+a open auto-placement d measure s set scale a place anchor h place hub v esc select mode ctrl+z undo shift drag move orthogonal f fit view"
     },
     {
         id: 'logic',
