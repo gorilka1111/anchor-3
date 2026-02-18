@@ -57,6 +57,21 @@ const DOCUMENTATION: HelpSection[] = [
                             </div>
                         </div>
                         <div className="flex items-start space-x-3">
+                            <div className="p-1.5 bg-gray-700/50 rounded text-gray-200 shrink-0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <g style={{ transform: 'scale(1.4)', transformOrigin: 'center' }}>
+                                        <path d="M12 20.5c3.5 0 6.5-2.5 6.5-6.5s-2.5-5.5-5.5-5.5c-0.5 0-1 0.1-1.5 0.3-0.5-0.2-1-0.3-1.5-0.3-3 0-5.5 1.5-5.5 5.5s3 6.5 6.5 6.5z" fill="currentColor" fillOpacity="0.1" />
+                                        <path d="M12 20.5c3.5 0 6.5-2.5 6.5-6.5s-2.5-5.5-5.5-5.5c-0.5 0-1 0.1-1.5 0.3-0.5-0.2-1-0.3-1.5-0.3-3 0-5.5 1.5-5.5 5.5s3 6.5 6.5 6.5z" />
+                                        <path d="M12 8.5c0-2.5 1-4 2.5-4.5M12 8.5c-0.5-1-1.5-2-3-1.5" />
+                                    </g>
+                                </svg>
+                            </div>
+                            <div>
+                                <p className="font-bold text-gray-200 text-xs">Pan (P)</p>
+                                <p className="text-[10px] text-gray-400 text-pretty">Click and drag to pan the view. Right-click or middle-mouse drag also pans the canvas.</p>
+                            </div>
+                        </div>
+                        <div className="flex items-start space-x-3">
                             <div className="p-1.5 bg-gray-700/50 rounded text-gray-200 shrink-0 flex space-x-1">
                                 <Undo2 size={14} />
                                 <Redo2 size={14} />
@@ -238,7 +253,7 @@ const DOCUMENTATION: HelpSection[] = [
                 </div>
             </div>
         ),
-        searchableText: "toolbar icons interface edit view select undo redo layers toggles floorplan walls dimensions cables hubs rooms labels anchors heatmap signal resolution draw wall lock rect 3-pt devices network anchor auto-place hub route cable settings project manage import export slots bom measure scale new project dxf layer manager"
+        searchableText: "toolbar icons interface edit view select pan undo redo layers toggles floorplan walls dimensions cables hubs rooms labels anchors heatmap signal resolution draw wall lock rect 3-pt devices network anchor auto-place hub route cable settings project manage import export slots bom measure scale new project dxf layer manager apple fruit"
     },
     {
         id: 'shortcuts',

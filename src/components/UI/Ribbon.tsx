@@ -40,10 +40,12 @@ import { ConfirmationModal } from './ConfirmationModal';
 // Custom Icons
 const PanIcon = ({ size, ...props }: any) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        {/* Apple Fruit - Styled to look like a premium icon */}
-        <path d="M12 20.5c3.5 0 6.5-2.5 6.5-6.5s-2.5-5.5-5.5-5.5c-0.5 0-1 0.1-1.5 0.3-0.5-0.2-1-0.3-1.5-0.3-3 0-5.5 1.5-5.5 5.5s3 6.5 6.5 6.5z" fill="currentColor" fillOpacity="0.1" />
-        <path d="M12 20.5c3.5 0 6.5-2.5 6.5-6.5s-2.5-5.5-5.5-5.5c-0.5 0-1 0.1-1.5 0.3-0.5-0.2-1-0.3-1.5-0.3-3 0-5.5 1.5-5.5 5.5s3 6.5 6.5 6.5z" />
-        <path d="M12 8.5c0-2.5 1-4 2.5-4.5M12 8.5c-0.5-1-1.5-2-3-1.5" />
+        <g style={{ transform: 'scale(1.4)', transformOrigin: 'center' }}>
+            {/* Apple Fruit - Styled to look like a premium icon */}
+            <path d="M12 20.5c3.5 0 6.5-2.5 6.5-6.5s-2.5-5.5-5.5-5.5c-0.5 0-1 0.1-1.5 0.3-0.5-0.2-1-0.3-1.5-0.3-3 0-5.5 1.5-5.5 5.5s3 6.5 6.5 6.5z" fill="currentColor" fillOpacity="0.1" />
+            <path d="M12 20.5c3.5 0 6.5-2.5 6.5-6.5s-2.5-5.5-5.5-5.5c-0.5 0-1 0.1-1.5 0.3-0.5-0.2-1-0.3-1.5-0.3-3 0-5.5 1.5-5.5 5.5s3 6.5 6.5 6.5z" />
+            <path d="M12 8.5c0-2.5 1-4 2.5-4.5M12 8.5c-0.5-1-1.5-2-3-1.5" />
+        </g>
     </svg>
 );
 

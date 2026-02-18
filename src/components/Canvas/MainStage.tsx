@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { Stage, Layer, Line, Group, Shape } from 'react-konva';
 import Konva from 'konva';
+import { Maximize } from 'lucide-react';
 import { WallsLayer } from './Layers/WallsLayer';
 import { FloorplanImageLayer } from './Layers/FloorplanImageLayer';
 import { DXFLayer } from './Layers/DXFLayer';
@@ -48,11 +49,19 @@ export const MainStage: React.FC = () => {
                 containerRef.current.focus();
             }
         }, 100);
-
         window.addEventListener('resize', updateSize);
-        return () => window.removeEventListener('resize', updateSize);
-    }, []);
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('resize', updateSize);
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [size]);
 
+    const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key.toLowerCase() === 'f') {
+            fitView();
+        }
+    };
 
 
     const {
@@ -77,7 +86,10 @@ export const MainStage: React.FC = () => {
             showMedialAxis: state.showMedialAxis,
             medialAxisStep: state.medialAxisStep,
             theme: state.theme,
-            walls: state.walls
+            walls: state.walls,
+            anchors: state.anchors,
+            hubs: state.hubs,
+            importedObjects: state.importedObjects
         }))
     );
 
@@ -207,6 +219,70 @@ export const MainStage: React.FC = () => {
         stage.position(newPos);
         stage.batchDraw();
     };
+
+    const fitView = () => {
+        if (!stage) return;
+
+        // Collect all points to calculate bounds
+        const points: { x: number; y: number }[] = [];
+
+        walls.forEach(w => {
+            points.push({ x: w.points[0], y: w.points[1] });
+            points.push({ x: w.points[2], y: w.points[3] });
+        });
+
+        useProjectStore.getState().anchors.forEach(a => {
+            points.push({ x: a.x, y: a.y });
+        });
+
+        useProjectStore.getState().hubs.forEach(h => {
+            points.push({ x: h.x, y: h.y });
+        });
+
+        useProjectStore.getState().importedObjects.forEach(obj => {
+            const x = obj.x || 0;
+            const y = obj.y || 0;
+            const w = (obj.width || 100) * (obj.scale || 1);
+            const h = (obj.height || 100) * (obj.scale || 1);
+            points.push({ x, y });
+            points.push({ x: x + w, y: y + h });
+        });
+
+        if (points.length === 0) {
+            // Reset to default if empty
+            stage.scale({ x: 1, y: 1 });
+            stage.position({ x: size.width / 2, y: size.height / 2 });
+            stage.batchDraw();
+            return;
+        }
+
+        const minX = Math.min(...points.map(p => p.x));
+        const minY = Math.min(...points.map(p => p.y));
+        const maxX = Math.max(...points.map(p => p.x));
+        const maxY = Math.max(...points.map(p => p.y));
+
+        const contentWidth = maxX - minX;
+        const contentHeight = maxY - minY;
+
+        const padding = 50; // pixels
+        const availableWidth = size.width - padding * 2;
+        const availableHeight = size.height - padding * 2;
+
+        const scaleX = availableWidth / contentWidth;
+        const scaleY = availableHeight / contentHeight;
+        const newScale = Math.min(scaleX, scaleY, 1); // Don't scale up beyond 1:1 if it already fits? Actually we might want to scale up if it's too small. Let's limit to 20 for safety.
+        const clampedScale = Math.min(Math.max(newScale, 0.05), 20);
+
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+
+        stage.scale({ x: clampedScale, y: clampedScale });
+        stage.position({
+            x: size.width / 2 - centerX * clampedScale,
+            y: size.height / 2 - centerY * clampedScale
+        });
+        stage.batchDraw();
+    };
     const gridColor = theme === 'light' ? '#e5e7eb' : '#555'; // Improved contrast (was #444)
     const axisColor = theme === 'light' ? '#9ca3af' : '#666';
 
@@ -326,6 +402,17 @@ export const MainStage: React.FC = () => {
 
             {/* QA Monitor */}
             <QAMonitor stage={stage} />
+
+            {/* Fit View Button */}
+            <div className="absolute bottom-6 left-6 z-30 flex items-center">
+                <button
+                    onClick={fitView}
+                    title="Fit All Objects to View (F)"
+                    className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-full border border-white/20 backdrop-blur-md shadow-xl transition-all duration-200 active:scale-90 group"
+                >
+                    <Maximize size={20} className="group-hover:scale-110 transition-transform" />
+                </button>
+            </div>
 
             {size.width > 0 && (
                 <Stage
